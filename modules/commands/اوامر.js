@@ -1,7 +1,7 @@
 module.exports.config = {
   name: "اوامر",
-  version: "2.2.0",
-  hasPermission: 0,
+  version: "2.3.0",
+  hasPermssion: 0,
   credits: "محمد إدريس",
   description: "عرض جميع أوامر البوت",
   usePrefix: true,
@@ -44,7 +44,7 @@ module.exports.run = async function ({
   const { commands } = global.client;
 
   /*
-   * جلب البادئة
+   * البادئة
    */
 
   const threadSetting =
@@ -58,17 +58,19 @@ module.exports.run = async function ({
   /*
    * قراءة صلاحية الأمر
    *
-   * يدعم:
-   * hasPermission
+   * BotPack يستخدم:
    * hasPermssion
+   *
+   * مع دعم:
+   * hasPermission
    */
 
   const getPermission = command => {
     if (!command?.config) return 0;
 
     const permission =
-      command.config.hasPermission ??
       command.config.hasPermssion ??
+      command.config.hasPermission ??
       0;
 
     const number = Number(permission);
@@ -77,7 +79,7 @@ module.exports.run = async function ({
   };
 
   /*
-   * طلب معلومات أمر معين
+   * معلومات أمر محدد
    */
 
   const requested = String(args[0] || "").trim();
@@ -128,7 +130,7 @@ module.exports.run = async function ({
   }
 
   /*
-   * جمع الأوامر
+   * جميع الأوامر
    */
 
   const allCommands = Array.from(
@@ -179,7 +181,7 @@ module.exports.run = async function ({
     .filter(Boolean);
 
   /*
-   * بناء القائمة
+   * القائمة
    */
 
   let body =
@@ -214,7 +216,7 @@ module.exports.run = async function ({
     "── ── ── ── ── ── ──";
 
   /*
-   * الإرسال
+   * إرسال القائمة
    */
 
   try {
