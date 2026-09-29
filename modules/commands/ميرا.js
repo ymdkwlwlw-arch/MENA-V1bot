@@ -6,7 +6,7 @@ const { GoogleGenAI } = require("@google/genai");
 module.exports.config = {
     name: "ميرا",
     aliases: ["mira", "ميراai"],
-    version: "1.0.0",
+    version: "1.2.0",
     hasPermssion: 0,
     credits: "KIROS",
     description: "ميرا — محللة ذكية للنصوص والصور والروابط والملفات",
@@ -16,204 +16,104 @@ module.exports.config = {
     cooldowns: 3
 };
 
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const MODEL = process.env.MIRA_MODEL || "gemini-3.8-flash";
 
-/* =========================================================
-   الإعدادات
-========================================================= */
-
-const GEMINI_API_KEY =
-    process.env.GEMINI_API_KEY;
-
-const MODEL =
-    process.env.MIRA_MODEL ||
-    "gemini-3.8-flash";
-
-const CACHE_DIR =
-    path.join(
-        __dirname,
-        "cache",
-        "mira"
-    );
+const CACHE_DIR = path.join(__dirname, "cache", "mira");
 
 const MAX_HISTORY = 10;
-
-const MAX_FILE_SIZE =
-    25 * 1024 * 1024;
-
-
-/* =========================================================
-   شخصية ميرا
-========================================================= */
+const MAX_FILE_SIZE = 25 * 1024 * 1024;
 
 const MIRA_SYSTEM = `
 أنتِ ميرا، مساعدة ذكاء اصطناعي متعددة الوسائط داخل بوت Messenger.
 
-وظيفتك الأساسية:
+وظيفتك:
 - تحليل النصوص.
 - تحليل الصور.
-- استخراج المعلومات من الصور.
-- تحليل الروابط وصفحات الويب التي يتم توفيرها لك.
+- استخراج النصوص والمعلومات من الصور.
+- تحليل الروابط وصفحات الويب المتاحة.
 - تحليل الملفات المدعومة.
 - تلخيص المحتوى.
-- استخراج البيانات والجداول والمعلومات المهمة.
-- مقارنة المعلومات عندما يطلب المستخدم ذلك.
+- استخراج البيانات والجداول.
+- مقارنة المعلومات.
+- شرح المحتوى بطريقة واضحة.
 
-أسلوبك:
-- عربية واضحة وطبيعية.
-- يمكن استخدام اللهجة السودانية عند الحاجة.
-- هادئة ومباشرة.
-- لا تكرري كلام المستخدم بلا داعٍ.
+القواعد:
+- استخدمي العربية الواضحة ويمكن استخدام اللهجة السودانية عند الحاجة.
 - لا تختلقي معلومات.
-- إذا لم تتمكني من الوصول إلى رابط أو ملف، قولي ذلك بوضوح.
-- ميزي دائمًا بين المعلومات التي رأيتها فعليًا وبين التخمين.
-- إذا كانت الصورة غير واضحة، اذكري أن القراءة غير مؤكدة.
-- إذا كان السؤال يحتاج معلومات من الرابط، اعتمدي على المحتوى الذي تم الوصول إليه وليس على التخمين.
-
-الوسائط:
-- عند وجود صورة، حللي الصورة نفسها.
-- عند وجود أكثر من صورة، قارني بينها إذا كان ذلك مناسبًا.
-- عند وجود ملف، حللي محتواه إذا كان مدعومًا.
-- عند وجود رابط، استخدمي أداة URL Context عندما تكون متاحة.
-
-الأمان:
-- لا تكشفي API keys.
-- لا تكشفي كلمات المرور.
-- لا تكشفي AppState أو session cookies.
+- إذا لم تتمكني من الوصول إلى رابط أو ملف، اذكري ذلك بوضوح.
+- ميزي بين المعلومات المؤكدة والتخمين.
+- إذا كانت الصورة غير واضحة، اذكري أن النتيجة غير مؤكدة.
+- عند وجود رابط، اعتمدي على المحتوى الذي تم الوصول إليه فعليًا.
+- لا تكشفي API keys أو كلمات المرور أو AppState أو session cookies.
 - لا تنفذي Shell أو JavaScript يرسله المستخدم.
-- لا تعدي المستخدم بأنك نفذت عملية خارجية إذا لم يتم تنفيذها فعليًا.
+- لا تدّعي تنفيذ عملية خارجية لم يتم تنفيذها.
 `;
 
+const conversations = new Map();
 
-/* =========================================================
-   الذاكرة
-========================================================= */
-
-const conversations =
-    new Map();
-
-function getKey(
-    threadID,
-    senderID
-) {
+function getKey(threadID, senderID) {
     return `${threadID}:${senderID}`;
 }
 
-function getConversation(
-    threadID,
-    senderID
-) {
+function getConversation(threadID, senderID) {
+    const key = getKey(threadID, senderID);
 
-    const key =
-        getKey(
-            threadID,
-            senderID
-        );
-
-    if (
-        !conversations.has(key)
-    ) {
-
-        conversations.set(
-            key,
-            {
-                messages: [],
-                lastActivity:
-                    Date.now()
-            }
-        );
+    if (!conversations.has(key)) {
+        conversations.set(key, {
+            messages: [],
+            lastActivity: Date.now()
+        });
     }
 
-    const conversation =
-        conversations.get(key);
+    const conversation = conversations.get(key);
 
-    conversation.lastActivity =
-        Date.now();
+    conversation.lastActivity = Date.now();
 
     return conversation;
 }
 
-function addHistory(
-    threadID,
-    senderID,
-    role,
-    content
-) {
-
-    const conversation =
-        getConversation(
-            threadID,
-            senderID
-        );
+function addHistory(threadID, senderID, role, content) {
+    const conversation = getConversation(
+        threadID,
+        senderID
+    );
 
     conversation.messages.push({
         role,
-        content:
-            String(content)
+        content: String(content)
     });
 
-    if (
-        conversation.messages.length >
-        MAX_HISTORY
-    ) {
-
+    if (conversation.messages.length > MAX_HISTORY) {
         conversation.messages =
-            conversation.messages.slice(
-                -MAX_HISTORY
-            );
+            conversation.messages.slice(-MAX_HISTORY);
     }
 }
 
+setInterval(() => {
+    const now = Date.now();
 
-/* تنظيف الذاكرة */
-
-setInterval(
-    () => {
-
-        const now =
-            Date.now();
-
-        for (
-            const [
-                key,
-                value
-            ]
-            of conversations
+    for (const [key, value] of conversations) {
+        if (
+            now - value.lastActivity >
+            60 * 60 * 1000
         ) {
-
-            if (
-                now -
-                value.lastActivity >
-                60 * 60 * 1000
-            ) {
-
-                conversations.delete(
-                    key
-                );
-            }
+            conversations.delete(key);
         }
-
-    },
-    10 * 60 * 1000
-);
+    }
+}, 10 * 60 * 1000);
 
 
-/* =========================================================
-   أدوات Messenger
-========================================================= */
+/* =========================
+   REACTION
+========================= */
 
-async function reaction(
-    api,
-    messageID,
-    emoji
-) {
-
+async function reaction(api, messageID, emoji) {
     try {
-
         if (
             typeof api.setMessageReaction ===
             "function"
         ) {
-
             await api.setMessageReaction(
                 emoji,
                 messageID,
@@ -221,24 +121,20 @@ async function reaction(
                 true
             );
         }
-
     } catch (_) {}
 }
 
 
-async function typing(
-    api,
-    threadID,
-    state
-) {
+/* =========================
+   TYPING
+========================= */
 
+async function typing(api, threadID, state) {
     try {
-
         if (
             typeof api.sendTypingIndicator ===
             "function"
         ) {
-
             return await api.sendTypingIndicator(
                 threadID,
                 state
@@ -249,16 +145,18 @@ async function typing(
             typeof api.sendTyping ===
             "function"
         ) {
-
             return await api.sendTyping(
                 threadID,
                 state
             );
         }
-
     } catch (_) {}
 }
 
+
+/* =========================
+   SEND MESSAGE
+========================= */
 
 function send(
     api,
@@ -266,36 +164,29 @@ function send(
     threadID,
     replyTo
 ) {
+    return new Promise(resolve => {
 
-    return new Promise(
-        resolve => {
+        const callback = (error, info) => {
 
-            const callback =
-                (error, info) => {
+            if (error) {
+                console.error(
+                    "[MIRA] sendMessage:",
+                    error.message
+                );
 
-                    if (error) {
+                return resolve(null);
+            }
 
-                        console.error(
-                            "[MIRA] sendMessage:",
-                            error.message
-                        );
+            resolve(info || null);
+        };
 
-                        return resolve(
-                            null
-                        );
-                    }
-
-                    resolve(
-                        info || null
-                    );
-                };
+        try {
 
             if (replyTo) {
 
                 api.sendMessage(
                     {
-                        body:
-                            message
+                        body: message
                     },
                     threadID,
                     callback,
@@ -309,65 +200,64 @@ function send(
                     threadID,
                     callback
                 );
+
             }
+
+        } catch (error) {
+
+            console.error(
+                "[MIRA] sendMessage exception:",
+                error.message
+            );
+
+            resolve(null);
         }
-    );
+    });
 }
 
 
-/* =========================================================
-   استخراج روابط من النص
-========================================================= */
+/* =========================
+   URL EXTRACTION
+========================= */
 
-function extractURLs(
-    text
-) {
+function extractURLs(text) {
 
-    if (!text) {
-        return [];
-    }
+    if (!text) return [];
 
     const matches =
         String(text).match(
             /https?:\/\/[^\s<>"']+/gi
         );
 
-    if (!matches) {
-        return [];
-    }
+    if (!matches) return [];
 
     return [
         ...new Set(
-            matches.map(
-                url =>
-                    url.replace(
-                        /[),.!؟]+$/,
-                        ""
-                    )
+            matches.map(url =>
+                url.replace(
+                    /[),.!؟]+$/,
+                    ""
+                )
             )
         )
     ];
 }
 
 
-/* =========================================================
-   معرفة نوع المرفق
-========================================================= */
+/* =========================
+   ATTACHMENT TYPE
+========================= */
 
-function getAttachmentType(
-    attachment
-) {
+function getAttachmentType(attachment) {
 
     const type =
         String(
-            attachment?.type ||
-            ""
+            attachment?.type || ""
         ).toLowerCase();
 
     const url =
         String(
-            attachment?.url ||
-            ""
+            attachment?.url || ""
         ).toLowerCase();
 
     const name =
@@ -380,51 +270,208 @@ function getAttachmentType(
     const source =
         `${type} ${url} ${name}`;
 
+
     if (
         type.includes("photo") ||
         type.includes("image") ||
-        /\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(
-            source
-        )
+        /\.(jpg|jpeg|png|webp|gif)(\?|$)/i
+            .test(source)
     ) {
         return "image";
     }
 
+
     if (
         type.includes("video") ||
-        /\.(mp4|mov|webm|mkv)(\?|$)/i.test(
-            source
-        )
+        /\.(mp4|mov|webm|mkv)(\?|$)/i
+            .test(source)
     ) {
         return "video";
     }
 
+
     if (
         type.includes("audio") ||
         type.includes("voice") ||
-        /\.(mp3|wav|m4a|ogg)(\?|$)/i.test(
-            source
-        )
+        /\.(mp3|wav|m4a|ogg)(\?|$)/i
+            .test(source)
     ) {
         return "audio";
     }
 
+
     if (
         type.includes("file") ||
-        /\.(pdf|txt|csv|json|docx|xlsx)(\?|$)/i.test(
-            source
-        )
+        /\.(pdf|txt|csv|json|docx|xlsx)(\?|$)/i
+            .test(source)
     ) {
         return "file";
     }
+
 
     return "unknown";
 }
 
 
-/* =========================================================
-   تحميل مرفق
-========================================================= */
+/* =========================
+   EXTENSION
+========================= */
+
+function getExtension(attachment) {
+
+    const name =
+        String(
+            attachment?.filename ||
+            attachment?.name ||
+            ""
+        );
+
+    const match =
+        name.match(
+            /\.[a-z0-9]{1,8}$/i
+        );
+
+    if (match) {
+        return match[0];
+    }
+
+
+    const url =
+        String(
+            attachment?.url || ""
+        );
+
+    const urlMatch =
+        url.match(
+            /\.(jpg|jpeg|png|webp|gif|pdf|txt|json|csv|mp4|mp3|wav|m4a|ogg)(?:\?|$)/i
+        );
+
+    if (urlMatch) {
+        return `.${urlMatch[1]}`;
+    }
+
+
+    return ".bin";
+}
+
+
+/* =========================
+   MIME TYPE
+========================= */
+
+function getMimeType(
+    filePath,
+    attachment,
+    kind
+) {
+
+    const type =
+        String(
+            attachment?.type || ""
+        ).toLowerCase();
+
+
+    if (
+        kind === "image" ||
+        type.includes("image") ||
+        type.includes("photo")
+    ) {
+
+        if (
+            /\.png$/i.test(filePath)
+        ) {
+            return "image/png";
+        }
+
+        if (
+            /\.webp$/i.test(filePath)
+        ) {
+            return "image/webp";
+        }
+
+        if (
+            /\.gif$/i.test(filePath)
+        ) {
+            return "image/gif";
+        }
+
+        return "image/jpeg";
+    }
+
+
+    if (
+        kind === "video" ||
+        type.includes("video")
+    ) {
+
+        if (
+            /\.webm$/i.test(filePath)
+        ) {
+            return "video/webm";
+        }
+
+        if (
+            /\.mov$/i.test(filePath)
+        ) {
+            return "video/quicktime";
+        }
+
+        return "video/mp4";
+    }
+
+
+    if (
+        kind === "audio" ||
+        type.includes("audio") ||
+        type.includes("voice")
+    ) {
+
+        if (
+            /\.wav$/i.test(filePath)
+        ) {
+            return "audio/wav";
+        }
+
+        if (
+            /\.ogg$/i.test(filePath)
+        ) {
+            return "audio/ogg";
+        }
+
+        if (
+            /\.m4a$/i.test(filePath)
+        ) {
+            return "audio/mp4";
+        }
+
+        return "audio/mpeg";
+    }
+
+
+    if (/\.pdf$/i.test(filePath)) {
+        return "application/pdf";
+    }
+
+    if (/\.txt$/i.test(filePath)) {
+        return "text/plain";
+    }
+
+    if (/\.json$/i.test(filePath)) {
+        return "application/json";
+    }
+
+    if (/\.csv$/i.test(filePath)) {
+        return "text/csv";
+    }
+
+
+    return "application/octet-stream";
+}
+
+
+/* =========================
+   DOWNLOAD ATTACHMENT
+========================= */
 
 async function downloadAttachment(
     attachment
@@ -436,14 +483,15 @@ async function downloadAttachment(
         );
     }
 
+
     await fs.ensureDir(
         CACHE_DIR
     );
 
+
     const extension =
-        getExtension(
-            attachment
-        );
+        getExtension(attachment);
+
 
     const filePath =
         path.join(
@@ -452,6 +500,7 @@ async function downloadAttachment(
                 .toString(36)
                 .slice(2, 8)}${extension}`
         );
+
 
     const response =
         await axios.get(
@@ -476,158 +525,51 @@ async function downloadAttachment(
             }
         );
 
+
     if (
         !response.data ||
         !response.data.length
     ) {
-
         throw new Error(
             "المرفق فارغ."
         );
     }
 
+
     if (
         response.data.length >
         MAX_FILE_SIZE
     ) {
-
         throw new Error(
             "حجم المرفق أكبر من الحد المسموح."
         );
     }
+
 
     await fs.writeFile(
         filePath,
         response.data
     );
 
+
     return filePath;
 }
 
 
-/* =========================================================
-   امتداد الملف
-========================================================= */
+/* =========================
+   CLEANUP
+========================= */
 
-function getExtension(
-    attachment
-) {
+async function cleanupFiles(files) {
 
-    const name =
-        String(
-            attachment?.filename ||
-            attachment?.name ||
-            ""
-        );
-
-    const match =
-        name.match(
-            /\.[a-z0-9]{1,8}$/i
-        );
-
-    if (match) {
-        return match[0];
-    }
-
-    const url =
-        String(
-            attachment?.url ||
-            ""
-        );
-
-    const urlMatch =
-        url.match(
-            /\.(jpg|jpeg|png|webp|gif|pdf|txt|mp4|mp3|wav)(?:\?|$)/i
-        );
-
-    if (urlMatch) {
-        return `.${urlMatch[1]}`;
-    }
-
-    return ".bin";
-}
-
-
-/* =========================================================
-   MIME
-========================================================= */
-
-function getMimeType(
-    filePath,
-    attachment
-) {
-
-    const type =
-        String(
-            attachment?.type ||
-            ""
-        ).toLowerCase();
-
-    if (
-        type.includes("image")
-    ) {
-
-        if (
-            /\.png$/i.test(filePath)
-        ) return "image/png";
-
-        if (
-            /\.webp$/i.test(filePath)
-        ) return "image/webp";
-
-        if (
-            /\.gif$/i.test(filePath)
-        ) return "image/gif";
-
-        return "image/jpeg";
-    }
-
-    if (
-        /\.pdf$/i.test(filePath)
-    ) {
-        return "application/pdf";
-    }
-
-    if (
-        /\.txt$/i.test(filePath)
-    ) {
-        return "text/plain";
-    }
-
-    if (
-        /\.json$/i.test(filePath)
-    ) {
-        return "application/json";
-    }
-
-    return "application/octet-stream";
-}
-
-
-/* =========================================================
-   تنظيف الملفات
-========================================================= */
-
-async function cleanupFiles(
-    files
-) {
-
-    for (
-        const file
-        of files
-    ) {
+    for (const file of files) {
 
         try {
 
             if (
-                await fs.pathExists(
-                    file
-                )
+                await fs.pathExists(file)
             ) {
-
-                await fs.remove(
-                    file
-                );
+                await fs.remove(file);
             }
 
         } catch (_) {}
@@ -635,73 +577,55 @@ async function cleanupFiles(
 }
 
 
-/* =========================================================
-   استخراج النص من نتيجة Gemini
-========================================================= */
+/* =========================
+   GEMINI RESPONSE
+========================= */
 
 function extractGeminiText(
     response
 ) {
 
-    if (
-        response?.output_text
-    ) {
-
-        return String(
-            response.output_text
-        ).trim();
-    }
-
-    if (
-        response?.text
-    ) {
-
-        return String(
-            response.text
-        ).trim();
-    }
-
-    let text = "";
-
     try {
 
-        for (
-            const step
-            of response?.steps || []
+        if (response?.text) {
+            return String(
+                response.text
+            ).trim();
+        }
+
+
+        if (
+            response?.candidates?.[0]
+                ?.content?.parts
         ) {
 
-            if (
-                step.type !==
-                "model_output"
-            ) {
-                continue;
-            }
-
-            for (
-                const block
-                of step.content || []
-            ) {
-
-                if (
-                    block.type ===
-                    "text"
-                ) {
-
-                    text +=
-                        `${block.text}\n`;
-                }
-            }
+            return response
+                .candidates[0]
+                .content
+                .parts
+                .filter(
+                    part =>
+                        typeof part.text ===
+                        "string"
+                )
+                .map(
+                    part =>
+                        part.text
+                )
+                .join("\n")
+                .trim();
         }
 
     } catch (_) {}
 
-    return text.trim();
+
+    return "";
 }
 
 
-/* =========================================================
-   تحليل نص / روابط
-========================================================= */
+/* =========================
+   TEXT ANALYSIS
+========================= */
 
 async function analyzeText(
     ai,
@@ -709,35 +633,35 @@ async function analyzeText(
 ) {
 
     const urls =
-        extractURLs(
-            prompt
-        );
+        extractURLs(prompt);
 
-    const tools = [];
+
+    const config = {
+        systemInstruction:
+            MIRA_SYSTEM
+    };
+
 
     if (urls.length) {
 
-        tools.push({
-            type:
-                "url_context"
-        });
+        config.tools = [
+            {
+                urlContext: {}
+            }
+        ];
     }
 
-    const input =
-        prompt;
 
     const response =
-        await ai.interactions.create({
-            model:
-                MODEL,
+        await ai.models.generateContent({
 
-            input,
+            model: MODEL,
 
-            tools,
+            contents: prompt,
 
-            system_instruction:
-                MIRA_SYSTEM
+            config
         });
+
 
     return {
         text:
@@ -750,9 +674,9 @@ async function analyzeText(
 }
 
 
-/* =========================================================
-   تحليل الصور والملفات
-========================================================= */
+/* =========================
+   FILE ANALYSIS
+========================= */
 
 async function analyzeFiles(
     ai,
@@ -761,29 +685,21 @@ async function analyzeFiles(
 ) {
 
     const downloaded = [];
-    const uploaded = [];
+
 
     try {
 
-        const inputs = [
+        const parts = [
             {
-                type:
-                    "text",
-
                 text:
                     prompt ||
-                    "حللي المحتوى المرفق واستخرجي المعلومات المهمة."
+                    "حلل المحتوى المرفق واستخرج أهم المعلومات."
             }
         ];
 
 
-        /*
-         * تحميل المرفقات
-         */
-
         for (
-            const attachment
-            of attachments
+            const attachment of attachments
         ) {
 
             const kind =
@@ -791,77 +707,127 @@ async function analyzeFiles(
                     attachment
                 );
 
+
             if (
                 kind === "unknown"
             ) {
                 continue;
             }
 
+
             /*
-             * الصوت والفيديو يحتاجان
-             * معالجة منفصلة حسب دعم
-             * النموذج/الـAPI.
+             * الفيديو والصوت:
+             * في هذه النسخة نمرر معلومات عن
+             * نوع المرفق بدل الادعاء بتحليله.
              */
+
+            if (
+                kind === "video" ||
+                kind === "audio"
+            ) {
+
+                parts.push({
+                    text:
+                        `يوجد مرفق من نوع ${kind}. ` +
+                        `هذا النوع غير مفعّل للتحليل المباشر ` +
+                        `في مسار ميرا الحالي.`
+                });
+
+                continue;
+            }
+
 
             const filePath =
                 await downloadAttachment(
                     attachment
                 );
 
+
             downloaded.push(
                 filePath
             );
 
+
             const mimeType =
                 getMimeType(
                     filePath,
-                    attachment
+                    attachment,
+                    kind
                 );
 
 
             /*
-             * رفع الملف إلى Gemini Files API
+             * الصور
+             */
+
+            if (
+                kind === "image"
+            ) {
+
+                const buffer =
+                    await fs.readFile(
+                        filePath
+                    );
+
+
+                parts.push({
+                    inlineData: {
+                        mimeType,
+                        data:
+                            buffer.toString(
+                                "base64"
+                            )
+                    }
+                });
+
+
+                continue;
+            }
+
+
+            /*
+             * الملفات
              */
 
             const uploadedFile =
                 await ai.files.upload({
-                    file:
-                        filePath,
+
+                    file: filePath,
 
                     config: {
                         mimeType
                     }
                 });
 
-            uploaded.push(
-                uploadedFile
-            );
+
+            if (
+                !uploadedFile?.uri
+            ) {
+                throw new Error(
+                    "فشل رفع الملف إلى Gemini."
+                );
+            }
 
 
-            /*
-             * إدخال الملف
-             */
+            parts.push({
 
-            inputs.push({
-                type:
-                    kind === "image"
-                        ? "image"
-                        : "file",
+                fileData: {
 
-                uri:
-                    uploadedFile.uri,
+                    fileUri:
+                        uploadedFile.uri,
 
-                mime_type:
-                    uploadedFile.mimeType ||
-                    mimeType
+                    mimeType:
+                        uploadedFile.mimeType ||
+                        mimeType
+                }
+
             });
         }
 
 
         if (
-            inputs.length === 1
+            parts.length === 1
         ) {
-
             throw new Error(
                 "لم أتمكن من تجهيز المرفق للتحليل."
             );
@@ -869,19 +835,26 @@ async function analyzeFiles(
 
 
         const response =
-            await ai.interactions.create({
-                model:
-                    MODEL,
+            await ai.models.generateContent({
 
-                input:
-                    inputs,
+                model: MODEL,
 
-                system_instruction:
-                    MIRA_SYSTEM
+                contents: [
+                    {
+                        role: "user",
+                        parts
+                    }
+                ],
+
+                config: {
+                    systemInstruction:
+                        MIRA_SYSTEM
+                }
             });
 
 
         return {
+
             text:
                 extractGeminiText(
                     response
@@ -890,24 +863,19 @@ async function analyzeFiles(
             response
         };
 
+
     } finally {
 
         await cleanupFiles(
             downloaded
         );
-
-        /*
-         * لا نحذف ملفات Gemini هنا.
-         * يتم تنظيفها من جهة الخدمة
-         * وفق دورة حياة Files API.
-         */
     }
 }
 
 
-/* =========================================================
-   بناء سياق الذاكرة
-========================================================= */
+/* =========================
+   HISTORY
+========================= */
 
 function buildHistory(
     threadID,
@@ -920,11 +888,13 @@ function buildHistory(
             senderID
         );
 
+
     if (
         !conversation.messages.length
     ) {
         return "";
     }
+
 
     return conversation.messages
         .map(
@@ -935,9 +905,9 @@ function buildHistory(
 }
 
 
-/* =========================================================
-   تنظيف الرد
-========================================================= */
+/* =========================
+   CLEAN RESPONSE
+========================= */
 
 function cleanResponse(
     text
@@ -948,18 +918,18 @@ function cleanResponse(
             text || ""
         ).trim();
 
+
     if (!result) {
 
-        return "ما قدرت أطلع نتيجة من المحتوى المرسل.";
+        return (
+            "ما قدرت أطلع نتيجة " +
+            "من المحتوى المرسل."
+        );
     }
 
-    /*
-     * حد أقصى مناسب للرسالة
-     */
 
     if (
-        result.length >
-        7000
+        result.length > 7000
     ) {
 
         result =
@@ -970,13 +940,14 @@ function cleanResponse(
             "\n\n[تم اختصار الرد]";
     }
 
+
     return result;
 }
 
 
-/* =========================================================
-   المحرك الرئيسي
-========================================================= */
+/* =========================
+   MAIN ANALYZER
+========================= */
 
 async function analyze({
     query,
@@ -985,14 +956,13 @@ async function analyze({
     senderID
 }) {
 
-    if (
-        !GEMINI_API_KEY
-    ) {
+    if (!GEMINI_API_KEY) {
 
         throw new Error(
             "GEMINI_API_KEY غير موجود."
         );
     }
+
 
     const ai =
         new GoogleGenAI({
@@ -1001,15 +971,12 @@ async function analyze({
         });
 
 
-    /*
-     * إضافة الذاكرة للنص
-     */
-
     const history =
         buildHistory(
             threadID,
             senderID
         );
+
 
     let prompt =
         query ||
@@ -1029,14 +996,8 @@ ${prompt}
     }
 
 
-    /*
-     * هل توجد مرفقات؟
-     */
-
     if (
-        Array.isArray(
-            attachments
-        ) &&
+        Array.isArray(attachments) &&
         attachments.length
     ) {
 
@@ -1047,15 +1008,12 @@ ${prompt}
                 attachments
             );
 
+
         return cleanResponse(
             result.text
         );
     }
 
-
-    /*
-     * نص / روابط
-     */
 
     const result =
         await analyzeText(
@@ -1063,15 +1021,16 @@ ${prompt}
             prompt
         );
 
+
     return cleanResponse(
         result.text
     );
 }
 
 
-/* =========================================================
-   إرسال النتيجة وتسجيل الذاكرة
-========================================================= */
+/* =========================
+   PROCESS REQUEST
+========================= */
 
 async function processRequest({
     api,
@@ -1086,11 +1045,17 @@ async function processRequest({
         messageID
     } = event;
 
+
+    /*
+     * 🧠 ميرا تفكر / تحلل
+     */
+
     await reaction(
         api,
         messageID,
-        "⏳"
+        "🧠"
     );
+
 
     await typing(
         api,
@@ -1098,14 +1063,20 @@ async function processRequest({
         true
     );
 
+
     try {
 
         const answer =
             await analyze({
+
                 query,
+
                 attachments,
+
                 threadID,
+
                 senderID
+
             });
 
 
@@ -1113,9 +1084,9 @@ async function processRequest({
             threadID,
             senderID,
             "user",
-            query ||
-                "[مرفق]"
+            query || "[مرفق]"
         );
+
 
         addHistory(
             threadID,
@@ -1124,6 +1095,10 @@ async function processRequest({
             answer
         );
 
+
+        /*
+         * ✅ نجاح
+         */
 
         await reaction(
             api,
@@ -1134,6 +1109,7 @@ async function processRequest({
 
         return answer;
 
+
     } catch (error) {
 
         console.error(
@@ -1141,19 +1117,26 @@ async function processRequest({
             error
         );
 
+
+        /*
+         * ❌ خطأ
+         */
+
         await reaction(
             api,
             messageID,
             "❌"
         );
 
+
         return (
             "ما قدرت أحلل المحتوى حاليًا.\n\n" +
             `السبب: ${
-                error.message ||
+                error?.message ||
                 "خطأ غير معروف"
             }`
         );
+
 
     } finally {
 
@@ -1166,9 +1149,9 @@ async function processRequest({
 }
 
 
-/* =========================================================
-   الأمر
-========================================================= */
+/* =========================
+   RUN
+========================= */
 
 module.exports.run =
 async function ({
@@ -1184,7 +1167,7 @@ async function ({
 
 
     /*
-     * مرفقات الرسالة الحالية
+     * المرفقات الموجودة مع الرسالة
      */
 
     const currentAttachments =
@@ -1196,26 +1179,28 @@ async function ({
 
 
     /*
-     * مرفقات الرسالة التي نرد عليها
+     * المرفقات الموجودة في الرسالة
+     * التي يرد عليها المستخدم
      */
 
     const replyAttachments =
         Array.isArray(
-            event.messageReply?.attachments
+            event.messageReply
+                ?.attachments
         )
-            ? event.messageReply.attachments
+            ? event.messageReply
+                .attachments
             : [];
 
 
     /*
-     * دمج المرفقات بدون تكرار
+     * دمج المرفقات
      */
 
-    const attachments =
-        [
-            ...currentAttachments,
-            ...replyAttachments
-        ];
+    const attachments = [
+        ...currentAttachments,
+        ...replyAttachments
+    ];
 
 
     if (
@@ -1224,7 +1209,9 @@ async function ({
     ) {
 
         return send(
+
             api,
+
 `╭──〔 ميرا 〕──╮
 │
 │ أنا جاهزة لتحليل:
@@ -1232,7 +1219,7 @@ async function ({
 │ ⎔ النصوص
 │ ⎔ الصور
 │ ⎔ الروابط
-│ ⎔ الملفات المدعومة
+│ ⎔ الملفات
 │ ⎔ البيانات
 │
 │ مثال:
@@ -1242,7 +1229,9 @@ async function ({
 │ ميرا حللي الرابط دا
 │
 ╰────────────────`,
+
             event.threadID,
+
             event.messageID
         );
     }
@@ -1250,24 +1239,34 @@ async function ({
 
     const answer =
         await processRequest({
+
             api,
+
             event,
+
             query,
+
             attachments
+
         });
 
 
     const info =
         await send(
+
             api,
+
             answer,
+
             event.threadID,
+
             event.messageID
+
         );
 
 
     /*
-     * تسجيل Reply
+     * تسجيل الرد لمواصلة المحادثة
      */
 
     if (
@@ -1278,8 +1277,8 @@ async function ({
     ) {
 
         global.client.handleReply.push({
-            name:
-                "ميرا",
+
+            name: "ميرا",
 
             messageID:
                 info.messageID,
@@ -1290,21 +1289,22 @@ async function ({
             threadID:
                 event.threadID,
 
-            type:
-                "mira",
+            type: "mira",
 
             createdAt:
                 Date.now()
+
         });
     }
+
 
     return info;
 };
 
 
-/* =========================================================
-   استمرار المحادثة
-========================================================= */
+/* =========================
+   HANDLE REPLY
+========================= */
 
 module.exports.handleReply =
 async function ({
@@ -1313,11 +1313,14 @@ async function ({
     handleReply
 }) {
 
-    if (
-        !handleReply
-    ) {
+    if (!handleReply) {
         return;
     }
+
+
+    /*
+     * التأكد أن الرد داخل نفس المجموعة
+     */
 
     if (
         String(
@@ -1331,12 +1334,19 @@ async function ({
     }
 
 
+    /*
+     * النص الجديد
+     */
+
     const query =
         String(
-            event.body ||
-            ""
+            event.body || ""
         ).trim();
 
+
+    /*
+     * مرفقات الرسالة الجديدة
+     */
 
     const attachments =
         Array.isArray(
@@ -1346,20 +1356,36 @@ async function ({
             : [];
 
 
+    /*
+     * مرفقات الرسالة التي يتم الرد عليها
+     */
+
     const replyAttachments =
         Array.isArray(
-            event.messageReply?.attachments
+            event.messageReply
+                ?.attachments
         )
-            ? event.messageReply.attachments
+            ? event.messageReply
+                .attachments
             : [];
 
 
-    const allAttachments =
-        [
-            ...attachments,
-            ...replyAttachments
-        ];
+    /*
+     * دمج المرفقات
+     */
 
+    const allAttachments = [
+
+        ...attachments,
+
+        ...replyAttachments
+
+    ];
+
+
+    /*
+     * لا يوجد شيء للتحليل
+     */
 
     if (
         !query &&
@@ -1369,24 +1395,46 @@ async function ({
     }
 
 
+    /*
+     * تشغيل ميرا
+     */
+
     const answer =
         await processRequest({
+
             api,
+
             event,
+
             query,
+
             attachments:
                 allAttachments
+
         });
 
 
+    /*
+     * إرسال النتيجة
+     */
+
     const info =
         await send(
+
             api,
+
             answer,
+
             event.threadID,
+
             event.messageID
+
         );
 
+
+    /*
+     * إبقاء نظام الرد فعالاً
+     */
 
     if (
         info?.messageID &&
@@ -1396,8 +1444,8 @@ async function ({
     ) {
 
         global.client.handleReply.push({
-            name:
-                "ميرا",
+
+            name: "ميرا",
 
             messageID:
                 info.messageID,
@@ -1408,13 +1456,14 @@ async function ({
             threadID:
                 event.threadID,
 
-            type:
-                "mira",
+            type: "mira",
 
             createdAt:
                 Date.now()
+
         });
     }
+
 
     return info;
 };
