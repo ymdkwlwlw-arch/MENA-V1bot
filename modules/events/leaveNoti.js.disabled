@@ -1,7 +1,7 @@
 module.exports.config = {
   name: "leave",
   eventType: ["log:unsubscribe"],
-  version: "2.0.0",
+  version: "2.1.0",
   credits: "Mirai Team | تعديل: محمد إدريس",
   description: "إشعار مغادرة أو طرد الأعضاء",
   dependencies: {}
@@ -9,18 +9,27 @@ module.exports.config = {
 
 module.exports.run = async function({ api, event, Users }) {
   const { threadID } = event;
-  const leftID = event.logMessageData?.leftParticipantFbId;
+
+  console.log("\n========== [LEAVE EVENT] ==========");
+  console.log(JSON.stringify(event, null, 2));
+  console.log("===================================\n");
+
+  const data = event.logMessageData || {};
+  const leftID =
+    data.leftParticipantFbId ||
+    data.leftParticipantFbIds?.[0];
 
   if (!leftID) {
+    console.log("[leave] لم يتم العثور على leftParticipantFbId");
     return;
   }
 
   try {
-    let name = global.data.userName.get(leftID);
+    let name = global.data.userName.get(String(leftID));
 
     if (!name) {
       try {
-        name = await Users.getNameUser(leftID);
+        name = await Users.getNameUser(String(leftID));
       } catch (e) {
         name = "العضو";
       }
@@ -28,57 +37,54 @@ module.exports.run = async function({ api, event, Users }) {
 
     name = name || "العضو";
 
-    /*
-     * إذا كان العضو نفسه هو صاحب الحدث
-     * فهذا يعني أنه غادر بنفسه.
-     *
-     * إذا كان event.author مختلفًا عنه
-     * فهذا يعني أن شخصًا آخر قام بإزالته.
-     */
+    const authorID = String(event.author || "");
+    const memberID = String(leftID);
 
-    const leftBySelf = String(event.author) === String(leftID);
+    const leftBySelf = authorID === memberID;
 
-    // ═══════════════════════════════
-    // 🦧 تم طرده بواسطة الأدمن
-    // ═══════════════════════════════
+    console.log("[leave] العضو:", memberID);
+    console.log("[leave] المنفذ:", authorID);
+    console.log("[leave] خرج بنفسه:", leftBySelf);
 
+    // شخص آخر قام بطرده
     if (!leftBySelf) {
       return api.sendMessage(
-        `بلع في خمستو 🦧`,
+        "بلع في خمستو 🦧",
         threadID
       );
     }
 
-    // ═══════════════════════════════
-    // 🗿 العضو غادر بنفسه
-    // ═══════════════════════════════
-
+    // العضو خرج بنفسه
     try {
+      if (typeof api.addUserToGroup !== "function") {
+        console.log("[leave] addUserToGroup غير موجود في API");
+        
+        return api.sendMessage(
+          "هو انت فطرت عشان تطلع بي كرامتك 🗿",
+          threadID
+        );
+      }
 
-      // محاولة إعادة العضو
-      await api.addUserToGroup(leftID, threadID);
+      await api.addUserToGroup(memberID, threadID);
 
       return api.sendMessage(
-        `هو انت فطرت عشان تطلع بي كرامتك 🗿`,
+        "هو انت فطرت عشان تطلع بي كرامتك 🗿",
         threadID
       );
 
     } catch (error) {
-
       console.log(
         `[leave] فشل إرجاع ${name}:`,
-        error.message
+        error
       );
 
       return api.sendMessage(
-        `العب اوسخ من انو ينضاف 🐸`,
+        "العب اوسخ من انو ينضاف 🐸",
         threadID
       );
     }
 
   } catch (error) {
-
     console.log("[leave] Error:", error);
-
   }
 };
