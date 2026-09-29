@@ -4,10 +4,10 @@ const { GoogleGenAI } = require("@google/genai");
 
 module.exports.config = {
     name: "لينا",
-    version: "10.0.0",
+    version: "11.0.0",
     hasPermssion: 0,
     credits: "كولو سان",
-    description: "لينا — مساعد ذكاء اصطناعي متعدد النماذج مع نظام محادثة وتشخيص للمطور",
+    description: "لينا — مساعد ذكي يفهم الطلبات الطبيعية وينفذ أوامر البوت الحقيقية",
     commandCategory: "الذكاء الاصطناعي",
     usages: "لينا [سؤالك]",
     cooldowns: 2,
@@ -25,41 +25,98 @@ const personality = `
 
 هويتك:
 - اسمك لينا.
-- عمرك 18 سنة كشخصية افتراضية.
+- أنتِ شخصية افتراضية ودودة.
 - مالك البوت هو كولو سان.
 - معرف مالك البوت: ${OWNER_ID}.
 - تتحدثين بالعربية الطبيعية.
-- يمكنك استخدام اللهجة السودانية عندما يكون مناسبًا.
-- شخصيتك مرحة، اجتماعية، ذكية، سريعة البديهة و"ردامة" بطريقة خفيفة.
-- تحبين المزاح والردود الساخرة الخفيفة، لكن بدون إهانة مؤذية أو تنمر أو تهديد.
+- يمكنك استخدام اللهجة السودانية عندما يكون ذلك مناسبًا.
+- شخصيتك حنونة جدًا، رايقة، لطيفة، هادئة، ومتفهمة.
+- لا تكوني متصنعة أو مبالغة في الحنان.
+- لا تستخدمي أسلوبًا رومانسيًا أو علاقة عاطفية مع المستخدم.
+- كوني مثل مساعدة لطيفة ومحترمة تهتم بأن تفهم طلب المستخدم جيدًا.
+- لا تستخدمي السخرية الجارحة أو الإهانة أو التنمر.
 - لا تكرري اسم المستخدم بدون سبب.
 - لا تدعي أنك نفذت شيئًا لم تنفذيه فعليًا.
-- لا تختلقي نتائج أو معلومات.
+- لا تختلقي معلومات أو نتائج.
 - إذا لم تعرفي شيئًا فقولي ذلك بوضوح.
 - في البرمجة أعطي حلولًا عملية ومرتبة.
-- إذا اكتشفت مشكلة في كود، اشرحي المشكلة وسببها واقترحي إصلاحًا.
-- لا تذكري اسم النموذج أو مزود الـAPI إلا إذا سُئلتِ عنه.
+- إذا وجدت مشكلة في كود، اشرحي السبب والحل.
+- لا تذكري اسم النموذج أو مزود API إلا إذا سُئلتِ عنه.
+
+أسلوب الكتابة:
+- ردودك طبيعية ومختصرة قدر الإمكان.
+- لا تستخدمي زخارف مبالغًا فيها.
+- لا تستخدمي إيموجيات كثيرة.
+- الإيموجيات العادية مسموحة باعتدال فقط عندما تناسب الكلام.
+- لا تستخدمي الإيموجيات كبديل للكلام.
+- في نهاية الرد استخدمي واحدًا فقط من هذه النهايات:
+  ヾ(＾-＾)ノ
+  •-•
+  (•—•)
+
+مهم:
+- لا تضعي أكثر من واحدة منها في نفس الرد.
+- لا تضعيها في منتصف الكلام.
+- ضعيها في آخر الرد فقط.
 
 التعامل مع أوامر البوت:
 - البوت يحتوي على أوامر حقيقية.
-- إذا طلب المستخدم تشغيل أمر موجود، استخدمي الأمر الحقيقي فقط.
-- لا تقولي إن الأمر اشتغل قبل أن يتم تشغيله.
+- إذا طلب المستخدم تشغيل أمر موجود، يجب استخدام الأمر الحقيقي.
+- لا تقولي إن الأمر اشتغل قبل تشغيله فعليًا.
 - لا تنفذي JavaScript أو Shell أو أوامر نظام يرسلها المستخدم.
-- لا تحاولي استخراج API keys أو كلمات المرور أو AppState أو session cookies.
-- لا تكشفي أسرار البيئة أو محتويات الملفات السرية.
+- لا تستخرجي API keys أو كلمات المرور أو AppState أو session cookies.
+- لا تكشفي أسرار البيئة أو الملفات السرية.
 
 صلاحيات المطور:
 - المطور الوحيد هو صاحب المعرف ${OWNER_ID}.
-- المطور يستطيع طلب تشخيص ملفات الأوامر وقراءة محتواها.
-- يمكن عرض أسماء ملفات الأوامر للمطور.
-- يمكن تحليل ملفات JS واكتشاف بعض الأخطاء الواضحة.
+- يمكن للمطور طلب تشخيص ملفات الأوامر.
+- يمكن عرض أسماء ملفات الأوامر.
+- يمكن تحليل ملفات JavaScript واكتشاف بعض الأخطاء الواضحة.
 - يمكن تقديم اقتراحات لتحسين الكود.
-- لا تكشفي محتويات الملفات للمستخدمين العاديين.
-- لا تكشفي API keys أو كلمات المرور أو بيانات الجلسات حتى للمطور داخل الرد.
+- لا تكشفي API keys أو كلمات المرور أو بيانات الجلسات.
 - لا تنفذي أوامر النظام تلقائيًا.
-- لا تغيري ملفات المشروع تلقائيًا بناءً على رسالة المستخدم.
-- عند اقتراح تعديل، اعرضي التعديل للمطور ليقرر تطبيقه.
+- لا تغيري ملفات المشروع تلقائيًا.
 `;
+
+/* =========================================================
+   نهايات لينا
+========================================================= */
+
+const LINA_ENDINGS = [
+    "ヾ(＾-＾)ノ",
+    "•-•",
+    "(•—•)"
+];
+
+function addLinaEnding(text) {
+    let result = String(text || "").trim();
+
+    if (!result) {
+        return "•-•";
+    }
+
+    /*
+     * إزالة أي نهاية سابقة من النهايات الخاصة بلينا
+     */
+
+    for (const ending of LINA_ENDINGS) {
+        if (result.endsWith(ending)) {
+            result = result.slice(
+                0,
+                -ending.length
+            ).trim();
+        }
+    }
+
+    const ending =
+        LINA_ENDINGS[
+            Math.floor(
+                Math.random() * LINA_ENDINGS.length
+            )
+        ];
+
+    return `${result}\n${ending}`;
+}
 
 /* =========================================================
    حالة المحادثات
@@ -72,7 +129,11 @@ function getConversationKey(threadID, senderID) {
 }
 
 function getConversation(threadID, senderID) {
-    const key = getConversationKey(threadID, senderID);
+    const key =
+        getConversationKey(
+            threadID,
+            senderID
+        );
 
     if (!conversations.has(key)) {
         conversations.set(key, {
@@ -81,9 +142,11 @@ function getConversation(threadID, senderID) {
         });
     }
 
-    const conversation = conversations.get(key);
+    const conversation =
+        conversations.get(key);
 
-    conversation.lastActivity = Date.now();
+    conversation.lastActivity =
+        Date.now();
 
     return conversation;
 }
@@ -102,15 +165,13 @@ function addConversationMessage(
 
     conversation.messages.push({
         role,
-        content
+        content: String(content)
     });
 
-    /*
-     * نحتفظ بآخر 12 رسالة فقط
-     * حتى لا يكبر السياق بشكل مبالغ فيه.
-     */
-
-    if (conversation.messages.length > 12) {
+    if (
+        conversation.messages.length >
+        12
+    ) {
         conversation.messages =
             conversation.messages.slice(-12);
     }
@@ -118,13 +179,15 @@ function addConversationMessage(
 
 function clearOldConversations() {
     const now = Date.now();
-    const MAX_AGE = 60 * 60 * 1000;
+    const MAX_AGE =
+        60 * 60 * 1000;
 
-    for (const [
-        key,
-        conversation
-    ] of conversations.entries()) {
-
+    for (
+        const [
+            key,
+            conversation
+        ] of conversations.entries()
+    ) {
         if (
             now -
             conversation.lastActivity >
@@ -141,7 +204,7 @@ setInterval(
 );
 
 /* =========================================================
-   التفاعل الوحيد
+   Reaction
 ========================================================= */
 
 async function react(
@@ -150,11 +213,16 @@ async function react(
     threadID
 ) {
     try {
-        await api.setMessageReaction(
-            "⏳",
-            messageID,
-            threadID
-        );
+        if (
+            typeof api.setMessageReaction ===
+            "function"
+        ) {
+            await api.setMessageReaction(
+                "⏳",
+                messageID,
+                threadID
+            );
+        }
     } catch (error) {
         console.log(
             `[LINA] Reaction error: ${error.message}`
@@ -172,7 +240,6 @@ async function typing(
     status = true
 ) {
     try {
-
         if (
             typeof api.sendTypingIndicator ===
             "function"
@@ -192,13 +259,10 @@ async function typing(
                 status
             );
         }
-
     } catch (error) {
-
         console.log(
             `[LINA] Typing error: ${error.message}`
         );
-
     }
 }
 
@@ -214,23 +278,20 @@ function sendMessage(
 ) {
     return new Promise(resolve => {
 
-        const callback = (
-            error,
-            info
-        ) => {
+        const callback =
+            (error, info) => {
 
-            if (error) {
+                if (error) {
+                    console.error(
+                        "[LINA] sendMessage:",
+                        error.message
+                    );
 
-                console.error(
-                    "[LINA] sendMessage:",
-                    error.message
-                );
+                    return resolve(null);
+                }
 
-                return resolve(null);
-            }
-
-            resolve(info || null);
-        };
+                resolve(info || null);
+            };
 
         if (replyTo) {
 
@@ -251,9 +312,36 @@ function sendMessage(
                 threadID,
                 callback
             );
-
         }
     });
+}
+
+/* =========================================================
+   تنظيف رد الذكاء الاصطناعي
+========================================================= */
+
+function cleanAIResponse(text) {
+    let result =
+        String(text || "").trim();
+
+    if (!result) {
+        return "";
+    }
+
+    /*
+     * إزالة أي نهايات خاصة أضافها النموذج
+     * ثم نضيف النهاية بأنفسنا.
+     */
+
+    for (const ending of LINA_ENDINGS) {
+        result =
+            result
+                .split(ending)
+                .join("")
+                .trim();
+    }
+
+    return addLinaEnding(result);
 }
 
 /* =========================================================
@@ -265,7 +353,6 @@ async function askGemini(
     model,
     userPrompt
 ) {
-
     const ai =
         new GoogleGenAI({
             apiKey
@@ -292,7 +379,7 @@ async function askGemini(
         );
     }
 
-    return text;
+    return cleanAIResponse(text);
 }
 
 /* =========================================================
@@ -305,7 +392,6 @@ async function askGroq(
     userPrompt,
     history = []
 ) {
-
     const messages = [
         {
             role: "system",
@@ -347,7 +433,6 @@ async function askGroq(
         await response.json();
 
     if (!response.ok) {
-
         throw new Error(
             `HTTP ${response.status}: ${
                 data?.error?.message ||
@@ -364,130 +449,165 @@ async function askGroq(
             ?.trim();
 
     if (!text) {
-
         throw new Error(
             "Groq returned empty response"
         );
     }
 
-    return text;
+    return cleanAIResponse(text);
 }
 
 /* =========================================================
-   اكتشاف أوامر البوت
+   تطبيع النص
 ========================================================= */
 
-function detectCommand(
-    query,
-    commands
-) {
+function normalizeText(value) {
+    return String(value || "")
+        .toLowerCase()
+        .replace(/[إأآا]/g, "ا")
+        .replace(/ة/g, "ه")
+        .replace(/ى/g, "ي")
+        .replace(/[ًٌٍَُِّْـ]/g, "")
+        .replace(/[؟?!،,:;()[\]{}"'`]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+}
 
-    const text =
-        String(query || "")
-            .trim()
-            .toLowerCase();
+/* =========================================================
+   بناء فهرس الأوامر
+========================================================= */
 
-    if (!text) {
-        return null;
+function buildCommandIndex(commands) {
+
+    const index = [];
+
+    if (!commands) {
+        return index;
     }
 
-    const aliases = [
+    for (
+        const [mapName, command]
+        of commands.entries()
+    ) {
 
-        {
-            command: "اغنية",
-
-            patterns: [
-                "شغلي اغنية",
-                "شغل اغنية",
-                "شغلي الأغنية",
-                "شغل الأغنية",
-                "اغنية",
-                "أغنية"
-            ]
-        },
-
-        {
-            command: "ويكي",
-
-            patterns: [
-                "ابحث في ويكي",
-                "ابحث في ويكيبيديا",
-                "ويكي",
-                "ويكيبيديا"
-            ]
-        },
-
-        {
-            command: "اعدادات",
-
-            patterns: [
-                "افتح الاعدادات",
-                "افتح الإعدادات",
-                "اعدادات",
-                "الإعدادات"
-            ]
-        }
-    ];
-
-    for (const item of aliases) {
-
-        if (!commands.has(item.command)) {
+        if (
+            !command ||
+            !command.config ||
+            typeof command.run !== "function"
+        ) {
             continue;
         }
 
-        for (const pattern of item.patterns) {
+        const config =
+            command.config;
 
-            const normalizedPattern =
-                pattern.toLowerCase();
+        const names =
+            new Set();
 
-            if (
-                text === normalizedPattern ||
-                text.startsWith(
-                    normalizedPattern + " "
-                )
-            ) {
-
-                const remaining =
-                    text
-                        .slice(
-                            normalizedPattern.length
-                        )
-                        .trim();
-
-                return {
-                    name: item.command,
-
-                    args: remaining
-                        ? remaining.split(/\s+/)
-                        : []
-                };
-            }
+        if (mapName) {
+            names.add(String(mapName));
         }
-    }
 
-    for (const [name] of commands) {
-
-        const normalized =
-            String(name).toLowerCase();
+        if (config.name) {
+            names.add(
+                String(config.name)
+            );
+        }
 
         if (
-            text === normalized ||
-            text.startsWith(
-                normalized + " "
+            Array.isArray(
+                config.aliases
             )
         ) {
+            for (
+                const alias
+                of config.aliases
+            ) {
+                if (alias) {
+                    names.add(
+                        String(alias)
+                    );
+                }
+            }
+        }
 
-            const remaining =
-                text
-                    .slice(name.length)
-                    .trim();
-
-            return {
-                name,
-
-                args: remaining
-                    ? remaining.split(/\s+/)
+        index.push({
+            mapName,
+            command,
+            names: [...names],
+            description:
+                String(
+                    config.description ||
+                    ""
+                ),
+            usages:
+                String(
+                    config.usages ||
+                    ""
+                ),
+            natural:
+                Array.isArray(
+                    config.natural
+                )
+                    ? config.natural
                     : []
+        });
+    }
+
+    return index;
+}
+
+/* =========================================================
+   البحث المباشر عن الأمر
+========================================================= */
+
+function findCommand(
+    commandName,
+    commands
+) {
+    const wanted =
+        normalizeText(
+            commandName
+        );
+
+    if (!wanted || !commands) {
+        return null;
+    }
+
+    for (
+        const [
+            mapName,
+            command
+        ] of commands.entries()
+    ) {
+
+        if (
+            !command ||
+            !command.config
+        ) {
+            continue;
+        }
+
+        const names = [
+            mapName,
+            command.config.name,
+            ...(Array.isArray(
+                command.config.aliases
+            )
+                ? command.config.aliases
+                : [])
+        ]
+            .filter(Boolean)
+            .map(
+                normalizeText
+            );
+
+        if (
+            names.includes(wanted)
+        ) {
+            return {
+                name: mapName,
+                command
             };
         }
     }
@@ -496,7 +616,506 @@ function detectCommand(
 }
 
 /* =========================================================
-   تنفيذ أمر البوت
+   استخراج Arguments
+========================================================= */
+
+function extractArguments(
+    text,
+    commandName
+) {
+    const source =
+        normalizeText(text);
+
+    const name =
+        normalizeText(commandName);
+
+    if (
+        !source ||
+        !name
+    ) {
+        return [];
+    }
+
+    if (
+        source === name
+    ) {
+        return [];
+    }
+
+    if (
+        source.startsWith(
+            name + " "
+        )
+    ) {
+
+        const remaining =
+            source
+                .slice(name.length)
+                .trim();
+
+        return remaining
+            ? remaining.split(/\s+/)
+            : [];
+    }
+
+    return [];
+}
+
+/* =========================================================
+   Router محلي سريع
+========================================================= */
+
+function detectCommand(
+    query,
+    commands
+) {
+    const text =
+        normalizeText(query);
+
+    if (
+        !text ||
+        !commands
+    ) {
+        return null;
+    }
+
+    const index =
+        buildCommandIndex(
+            commands
+        );
+
+    /*
+     * 1 — الاسم والـ aliases
+     */
+
+    for (
+        const item
+        of index
+    ) {
+
+        for (
+            const name
+            of item.names
+        ) {
+
+            const normalizedName =
+                normalizeText(name);
+
+            if (
+                text === normalizedName ||
+                text.startsWith(
+                    normalizedName + " "
+                )
+            ) {
+
+                return {
+                    name: item.mapName,
+
+                    args:
+                        extractArguments(
+                            text,
+                            normalizedName
+                        ),
+
+                    confidence: 1,
+
+                    source: "direct"
+                };
+            }
+        }
+    }
+
+    /*
+     * 2 — natural داخل config
+     */
+
+    for (
+        const item
+        of index
+    ) {
+
+        for (
+            const phrase
+            of item.natural
+        ) {
+
+            const normalizedPhrase =
+                normalizeText(
+                    phrase
+                );
+
+            if (
+                text ===
+                    normalizedPhrase ||
+                text.startsWith(
+                    normalizedPhrase + " "
+                )
+            ) {
+
+                const remaining =
+                    text
+                        .slice(
+                            normalizedPhrase.length
+                        )
+                        .trim();
+
+                return {
+                    name:
+                        item.mapName,
+
+                    args:
+                        remaining
+                            ? remaining.split(/\s+/)
+                            : [],
+
+                    confidence:
+                        0.98,
+
+                    source:
+                        "natural"
+                };
+            }
+        }
+    }
+
+    return null;
+}
+
+/* =========================================================
+   AI Intent Router
+========================================================= */
+
+async function detectCommandWithAI(
+    query,
+    commands
+) {
+    if (
+        !query ||
+        !commands
+    ) {
+        return null;
+    }
+
+    const index =
+        buildCommandIndex(
+            commands
+        );
+
+    if (!index.length) {
+        return null;
+    }
+
+    /*
+     * لا نرسل كود الأوامر.
+     * نرسل فقط بيانات تعريفية.
+     */
+
+    const commandList =
+        index.map(
+            item => ({
+                name:
+                    item.mapName,
+
+                aliases:
+                    item.names,
+
+                description:
+                    item.description,
+
+                usages:
+                    item.usages,
+
+                natural:
+                    item.natural
+            })
+        );
+
+    const routerPrompt = `
+أنتِ نظام اختيار أوامر داخل بوت.
+
+المستخدم قال:
+"${query}"
+
+هذه هي الأوامر الحقيقية المتاحة:
+${JSON.stringify(
+    commandList,
+    null,
+    2
+)}
+
+مهمتك الوحيدة:
+اختاري الأمر الموجود في القائمة الذي يطابق طلب المستخدم.
+
+لا تخترعي أمرًا غير موجود.
+
+إذا كان المستخدم يريد تنفيذ أمر، أرجعي JSON فقط بهذا الشكل:
+
+{
+  "command": "اسم_الأمر",
+  "args": ["arg1", "arg2"]
+}
+
+إذا لم يكن هناك أمر مناسب، أرجعي:
+
+{
+  "command": null,
+  "args": []
+}
+
+القواعد:
+- command يجب أن يكون اسم أمر موجود في القائمة.
+- لا تضعي شرحًا.
+- لا تضعي Markdown.
+- لا تضعي code fence.
+- لا تنفذي الأمر.
+- لا تنفذي أي كود.
+`;
+
+    const googleKey =
+        process.env.GEMINI_API_KEY;
+
+    const groqKey =
+        process.env.GROQ_API_KEY;
+
+    /*
+     * Gemini
+     */
+
+    if (googleKey) {
+
+        try {
+
+            const ai =
+                new GoogleGenAI({
+                    apiKey:
+                        googleKey
+                });
+
+            const result =
+                await ai.models.generateContent({
+                    model:
+                        "gemini-3.6-flash",
+
+                    contents:
+                        routerPrompt,
+
+                    config: {
+                        temperature: 0,
+                        maxOutputTokens: 300
+                    }
+                });
+
+            const raw =
+                result?.text?.trim();
+
+            if (raw) {
+
+                const parsed =
+                    parseIntentJSON(
+                        raw
+                    );
+
+                const validated =
+                    validateIntent(
+                        parsed,
+                        commands
+                    );
+
+                if (validated) {
+                    return validated;
+                }
+            }
+
+        } catch (error) {
+
+            console.error(
+                "[LINA ROUTER] Gemini:",
+                error.message
+            );
+        }
+    }
+
+    /*
+     * Groq
+     */
+
+    if (groqKey) {
+
+        try {
+
+            const response =
+                await fetch(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    {
+                        method: "POST",
+
+                        headers: {
+                            Authorization:
+                                `Bearer ${groqKey}`,
+
+                            "Content-Type":
+                                "application/json"
+                        },
+
+                        body:
+                            JSON.stringify({
+                                model:
+                                    "openai/gpt-oss-20b",
+
+                                messages: [
+                                    {
+                                        role:
+                                            "system",
+
+                                        content:
+                                            routerPrompt
+                                    }
+                                ],
+
+                                temperature: 0,
+
+                                max_tokens:
+                                    300,
+
+                                response_format: {
+                                    type:
+                                        "json_object"
+                                }
+                            })
+                    }
+                );
+
+            const data =
+                await response.json();
+
+            if (
+                response.ok
+            ) {
+
+                const raw =
+                    data
+                        ?.choices?.[0]
+                        ?.message
+                        ?.content;
+
+                const parsed =
+                    parseIntentJSON(
+                        raw
+                    );
+
+                const validated =
+                    validateIntent(
+                        parsed,
+                        commands
+                    );
+
+                if (validated) {
+                    return validated;
+                }
+            }
+
+        } catch (error) {
+
+            console.error(
+                "[LINA ROUTER] Groq:",
+                error.message
+            );
+        }
+    }
+
+    return null;
+}
+
+/* =========================================================
+   قراءة JSON الخاص بالـ Intent
+========================================================= */
+
+function parseIntentJSON(
+    text
+) {
+    if (!text) {
+        return null;
+    }
+
+    try {
+        return JSON.parse(
+            String(text).trim()
+        );
+    } catch (_) {}
+
+    /*
+     * محاولة استخراج JSON
+     * إذا أضاف النموذج كلامًا حوله.
+     */
+
+    const match =
+        String(text).match(
+            /\{[\s\S]*\}/
+        );
+
+    if (!match) {
+        return null;
+    }
+
+    try {
+        return JSON.parse(
+            match[0]
+        );
+    } catch (_) {
+        return null;
+    }
+}
+
+/* =========================================================
+   التحقق من Intent
+========================================================= */
+
+function validateIntent(
+    intent,
+    commands
+) {
+    if (
+        !intent ||
+        !intent.command
+    ) {
+        return null;
+    }
+
+    const found =
+        findCommand(
+            intent.command,
+            commands
+        );
+
+    if (!found) {
+        return null;
+    }
+
+    const args =
+        Array.isArray(intent.args)
+            ? intent.args
+                .map(
+                    x => String(x)
+                )
+                .filter(Boolean)
+            : [];
+
+    return {
+        name:
+            found.name,
+
+        args,
+
+        confidence:
+            0.9,
+
+        source:
+            "ai-intent"
+    };
+}
+
+/* =========================================================
+   تنفيذ الأمر الحقيقي
 ========================================================= */
 
 async function executeBotCommand({
@@ -514,29 +1133,40 @@ async function executeBotCommand({
     if (
         !command ||
         !command.config ||
-        typeof command.run !== "function"
+        typeof command.run !==
+            "function"
     ) {
 
         return {
             success: false,
-            reason: "الأمر غير قابل للتنفيذ."
+
+            reason:
+                addLinaEnding(
+                    "الأمر ده ما قدرت أشغله."
+                )
         };
     }
 
     const requiredPermission =
         Number(
-            command.config.hasPermssion || 0
+            command.config
+                .hasPermssion || 0
         );
 
     if (
         requiredPermission >
-        Number(permssion || 0)
+        Number(
+            permssion || 0
+        )
     ) {
 
         return {
             success: false,
+
             reason:
-                "هذا الأمر يحتاج صلاحيات أعلى."
+                addLinaEnding(
+                    "الأمر ده محتاج صلاحيات أعلى."
+                )
         };
     }
 
@@ -545,13 +1175,17 @@ async function executeBotCommand({
         const Obj = {
             api,
             event,
-            args,
+            args:
+                Array.isArray(args)
+                    ? args
+                    : [],
             models,
             Users,
             Threads,
             Currencies,
             permssion,
-            getText: () => ""
+            getText:
+                () => ""
         };
 
         await Promise.resolve(
@@ -565,7 +1199,9 @@ async function executeBotCommand({
     } catch (error) {
 
         console.error(
-            `[LINA COMMAND ${command.config.name}]`,
+            `[LINA COMMAND ${
+                command.config.name
+            }]`,
             error
         );
 
@@ -573,18 +1209,22 @@ async function executeBotCommand({
             success: false,
 
             reason:
-                error?.message ||
-                "حدث خطأ أثناء تنفيذ الأمر."
+                addLinaEnding(
+                    "حصل خطأ أثناء تشغيل الأمر."
+                )
         };
     }
 }
 
 /* =========================================================
-   أدوات تشخيص المطور
+   المطور
 ========================================================= */
 
-function isOwner(senderID) {
-    return String(senderID) === String(OWNER_ID);
+function isOwner(
+    senderID
+) {
+    return String(senderID) ===
+        String(OWNER_ID);
 }
 
 function getCommandsPath() {
@@ -595,7 +1235,9 @@ function getCommandsPath() {
     );
 }
 
-function safeRelative(filePath) {
+function safeRelative(
+    filePath
+) {
     const base =
         path.resolve(
             getCommandsPath()
@@ -606,7 +1248,9 @@ function safeRelative(filePath) {
 
     if (
         target !== base &&
-        !target.startsWith(base + path.sep)
+        !target.startsWith(
+            base + path.sep
+        )
     ) {
         return false;
     }
@@ -614,8 +1258,9 @@ function safeRelative(filePath) {
     return true;
 }
 
-function findCommandFile(commandName) {
-
+function findCommandFile(
+    commandName
+) {
     if (!commandName) {
         return null;
     }
@@ -635,7 +1280,10 @@ function findCommandFile(commandName) {
         )
     ];
 
-    for (const file of possible) {
+    for (
+        const file
+        of possible
+    ) {
 
         if (
             safeRelative(file) &&
@@ -650,30 +1298,28 @@ function findCommandFile(commandName) {
 }
 
 function listCommandFiles() {
-
     const base =
         getCommandsPath();
 
-    if (!fs.existsSync(base)) {
+    if (
+        !fs.existsSync(base)
+    ) {
         return [];
     }
 
     return fs
         .readdirSync(base)
-        .filter(file =>
-            file.endsWith(".js") ||
-            file.endsWith(".cjs")
+        .filter(
+            file =>
+                file.endsWith(".js") ||
+                file.endsWith(".cjs")
         )
         .sort();
 }
 
-function stripSensitiveContent(text) {
-
-    /*
-     * لا نكشف الأسرار حتى للمطور
-     * داخل رد الذكاء الاصطناعي.
-     */
-
+function stripSensitiveContent(
+    text
+) {
     return String(text)
         .replace(
             /(?:GEMINI_API_KEY|GROQ_API_KEY|API_KEY|TOKEN|ACCESS_TOKEN|PASSWORD|APPSTATE|COOKIE)\s*[:=]\s*["'`][^"'`]+["'`]/gi,
@@ -685,21 +1331,25 @@ function stripSensitiveContent(text) {
         );
 }
 
-function diagnoseJavaScript(text) {
-
+function diagnoseJavaScript(
+    text
+) {
     const problems = [];
 
     const source =
         String(text || "");
 
     const openBraces =
-        (source.match(/{/g) || []).length;
+        (source.match(/{/g) || [])
+            .length;
 
     const closeBraces =
-        (source.match(/}/g) || []).length;
+        (source.match(/}/g) || [])
+            .length;
 
     if (
-        openBraces !== closeBraces
+        openBraces !==
+        closeBraces
     ) {
         problems.push(
             "عدد الأقواس { } غير متطابق."
@@ -707,13 +1357,16 @@ function diagnoseJavaScript(text) {
     }
 
     const openParens =
-        (source.match(/\(/g) || []).length;
+        (source.match(/\(/g) || [])
+            .length;
 
     const closeParens =
-        (source.match(/\)/g) || []).length;
+        (source.match(/\)/g) || [])
+            .length;
 
     if (
-        openParens !== closeParens
+        openParens !==
+        closeParens
     ) {
         problems.push(
             "عدد الأقواس ( ) غير متطابق."
@@ -743,11 +1396,14 @@ function diagnoseJavaScript(text) {
     return problems;
 }
 
+/* =========================================================
+   أدوات المطور
+========================================================= */
+
 function ownerDiagnostic(
     query,
     commands
 ) {
-
     const text =
         String(query || "")
             .trim();
@@ -757,17 +1413,17 @@ function ownerDiagnostic(
     }
 
     const lower =
-        text.toLowerCase();
+        normalizeText(text);
 
     /*
-     * قائمة الملفات
+     * قائمة الأوامر
      */
 
     if (
-        lower === "اعرض ملفات الاوامر" ||
-        lower === "اعرض ملفات الأوامر" ||
-        lower === "ملفات الاوامر" ||
-        lower === "ملفات الأوامر"
+        lower ===
+            "اعرض ملفات الاوامر" ||
+        lower ===
+            "ملفات الاوامر"
     ) {
 
         const files =
@@ -779,19 +1435,23 @@ function ownerDiagnostic(
             text:
 `╭──〔 ملفات الأوامر 〕──
 │
-${files
-    .map(
-        (file, index) =>
-            `│ ${index + 1}. ${file}`
-    )
-    .join("\n")}
+${
+    files.length
+        ? files
+            .map(
+                (file, index) =>
+                    `│ ${index + 1}. ${file}`
+            )
+            .join("\n")
+        : "│ لا توجد ملفات."
+}
 │
 ╰────────────────`
         };
     }
 
     /*
-     * قراءة ملف محدد
+     * قراءة ملف
      */
 
     const readMatch =
@@ -815,7 +1475,9 @@ ${files
                 type: "result",
 
                 text:
-                    `ما لقيت ملف الأمر: ${requested}`
+                    addLinaEnding(
+                        `ما لقيت ملف الأمر: ${requested}`
+                    )
             };
         }
 
@@ -845,9 +1507,16 @@ ${files
 │
 ${safeSource}
 │
-${problems.length
-    ? `⚠️ ملاحظات:\n${problems.map(x => `• ${x}`).join("\n")}`
-    : "✓ لم يظهر خطأ بنيوي واضح."}
+${
+    problems.length
+        ? `⚠️ ملاحظات:
+${problems
+    .map(
+        x => `• ${x}`
+    )
+    .join("\n")}`
+        : "✓ لم يظهر خطأ بنيوي واضح."
+}
 ╰────────────────`
             };
 
@@ -857,13 +1526,15 @@ ${problems.length
                 type: "result",
 
                 text:
-                    `فشل قراءة الملف: ${error.message}`
+                    addLinaEnding(
+                        `فشل قراءة الملف: ${error.message}`
+                    )
             };
         }
     }
 
     /*
-     * تشخيص أمر محدد
+     * تشخيص أمر
      */
 
     const diagnoseMatch =
@@ -887,7 +1558,9 @@ ${problems.length
                 type: "result",
 
                 text:
-                    `ما لقيت ملف الأمر: ${requested}`
+                    addLinaEnding(
+                        `ما لقيت ملف الأمر: ${requested}`
+                    )
             };
         }
 
@@ -910,11 +1583,16 @@ ${problems.length
                 text:
 `╭──〔 تشخيص ${path.basename(file)} 〕──
 │
-${problems.length
-    ? problems.map(
-        item => `⚠️ ${item}`
-      ).join("\n")
-    : "✓ البنية الأساسية تبدو سليمة."}
+${
+    problems.length
+        ? problems
+            .map(
+                item =>
+                    `⚠️ ${item}`
+            )
+            .join("\n")
+        : "✓ البنية الأساسية تبدو سليمة."
+}
 │
 ╰────────────────`
             };
@@ -925,7 +1603,9 @@ ${problems.length
                 type: "result",
 
                 text:
-                    `فشل التشخيص: ${error.message}`
+                    addLinaEnding(
+                        `فشل التشخيص: ${error.message}`
+                    )
             };
         }
     }
@@ -934,7 +1614,7 @@ ${problems.length
 }
 
 /* =========================================================
-   بناء Prompt مع سياق المحادثة
+   بناء Prompt
 ========================================================= */
 
 function buildPrompt(
@@ -942,7 +1622,6 @@ function buildPrompt(
     senderID,
     query
 ) {
-
     const conversation =
         getConversation(
             threadID,
@@ -951,8 +1630,9 @@ function buildPrompt(
 
     const history =
         conversation.messages
-            .map(item =>
-                `${item.role}: ${item.content}`
+            .map(
+                item =>
+                    `${item.role}: ${item.content}`
             )
             .join("\n");
 
@@ -965,11 +1645,12 @@ ${query}
 
 أجيبي بشكل طبيعي ومباشر.
 إذا كان المستخدم يواصل موضوعًا سابقًا فاستمري عليه.
+لا تدعي تنفيذ شيء لم يتم تنفيذه.
 `;
 }
 
 /* =========================================================
-   طلب الذكاء الاصطناعي
+   طلب AI
 ========================================================= */
 
 async function askAI({
@@ -994,7 +1675,7 @@ async function askAI({
     let answer = null;
 
     /*
-     * Groq
+     * Groq أولًا
      */
 
     if (groqKey) {
@@ -1006,7 +1687,8 @@ async function askAI({
         ];
 
         for (
-            const model of groqModels
+            const model
+            of groqModels
         ) {
 
             try {
@@ -1058,7 +1740,8 @@ async function askAI({
         ];
 
         for (
-            const model of geminiModels
+            const model
+            of geminiModels
         ) {
 
             try {
@@ -1092,7 +1775,7 @@ async function askAI({
 }
 
 /* =========================================================
-   تسجيل رد لينا للمحادثة
+   تسجيل Reply
 ========================================================= */
 
 function registerReply(
@@ -1117,7 +1800,6 @@ function registerReply(
     }
 
     global.client.handleReply.push({
-
         name: "لينا",
 
         messageID:
@@ -1134,10 +1816,6 @@ function registerReply(
         createdAt:
             Date.now()
     });
-
-    /*
-     * تنظيف الإدخالات القديمة
-     */
 
     global.client.handleReply =
         global.client.handleReply.filter(
@@ -1195,7 +1873,7 @@ module.exports.run = async function ({
             const info =
                 await sendMessage(
                     api,
-                    "أنا معاك 😌 اكتب لي عايز شنو.",
+                    "أنا معاك، أكتب لي عايز شنو.",
                     threadID
                 );
 
@@ -1266,58 +1944,100 @@ module.exports.run = async function ({
         }
 
         /*
-         * تشغيل أمر حقيقي
+         * =================================================
+         * Router سريع
+         * =================================================
          */
+
+        let requested = null;
 
         if (commands) {
 
-            const requested =
+            requested =
                 detectCommand(
                     query,
                     commands
                 );
-
-            if (requested) {
-
-                const command =
-                    commands.get(
-                        requested.name
-                    );
-
-                console.log(
-                    `[LINA] Command request: ${requested.name}`
-                );
-
-                const result =
-                    await executeBotCommand({
-                        api,
-                        event,
-                        args:
-                            requested.args,
-                        command,
-                        Threads,
-                        Users,
-                        Currencies,
-                        models,
-                        permssion
-                    });
-
-                if (result.success) {
-                    return;
-                }
-
-                await sendMessage(
-                    api,
-                    result.reason,
-                    threadID
-                );
-
-                return;
-            }
         }
 
         /*
-         * الذكاء الاصطناعي
+         * =================================================
+         * إذا لم يعرف Router المحلي الطلب
+         * نستخدم AI Intent Router
+         * =================================================
+         */
+
+        if (
+            !requested &&
+            commands
+        ) {
+
+            requested =
+                await detectCommandWithAI(
+                    query,
+                    commands
+                );
+        }
+
+        /*
+         * =================================================
+         * تنفيذ الأمر الحقيقي
+         * =================================================
+         */
+
+        if (
+            requested &&
+            commands
+        ) {
+
+            const command =
+                commands.get(
+                    requested.name
+                );
+
+            console.log(
+                `[LINA] Command request: ${
+                    requested.name
+                } | source: ${
+                    requested.source
+                } | args: ${
+                    JSON.stringify(
+                        requested.args
+                    )
+                }`
+            );
+
+            const result =
+                await executeBotCommand({
+                    api,
+                    event,
+                    args:
+                        requested.args,
+                    command,
+                    Threads,
+                    Users,
+                    Currencies,
+                    models,
+                    permssion
+                });
+
+            if (result.success) {
+                return;
+            }
+
+            await sendMessage(
+                api,
+                result.reason,
+                threadID
+            );
+
+            return;
+        }
+
+        /*
+         * =================================================
+         * AI Chat
+         * =================================================
          */
 
         addConversationMessage(
@@ -1336,11 +2056,6 @@ module.exports.run = async function ({
 
         if (!answer) {
 
-            /*
-             * إزالة آخر رسالة إذا فشلت
-             * كل الخدمات الذكية.
-             */
-
             const conversation =
                 getConversation(
                     threadID,
@@ -1351,7 +2066,9 @@ module.exports.run = async function ({
 
             await sendMessage(
                 api,
-                "الخدمات الذكية ما ردت هسي، جرّب بعد شوية.",
+                addLinaEnding(
+                    "الخدمات الذكية ما ردت هسي، جرّب بعد شوية."
+                ),
                 threadID
             );
 
@@ -1386,7 +2103,9 @@ module.exports.run = async function ({
 
         await sendMessage(
             api,
-            "حصل خطأ وأنا بحاول أنفذ طلبك.",
+            addLinaEnding(
+                "حصل خطأ وأنا بحاول أنفذ طلبك."
+            ),
             threadID
         );
 
@@ -1426,13 +2145,10 @@ module.exports.handleReply = async function ({
         body
     } = event;
 
-    /*
-     * نتحقق أن الرد تابع لهذه المحادثة
-     */
-
     if (
-        String(handleReply.threadID) !==
-        String(threadID)
+        String(
+            handleReply.threadID
+        ) !== String(threadID)
     ) {
         return;
     }
@@ -1444,10 +2160,6 @@ module.exports.handleReply = async function ({
     if (!query) {
         return;
     }
-
-    /*
-     * تفاعل الانتظار فقط
-     */
 
     await react(
         api,
@@ -1464,8 +2176,7 @@ module.exports.handleReply = async function ({
     try {
 
         /*
-         * المطور يستطيع استخدام أدوات التشخيص
-         * حتى من خلال الرد على رسالة لينا.
+         * أدوات المطور
          */
 
         if (
@@ -1496,8 +2207,86 @@ module.exports.handleReply = async function ({
             }
         }
 
+        const commands =
+            global.client?.commands;
+
         /*
-         * إضافة رسالة جديدة للسياق
+         * =================================================
+         * Router الأوامر حتى داخل Reply
+         * =================================================
+         */
+
+        let requested = null;
+
+        if (commands) {
+
+            requested =
+                detectCommand(
+                    query,
+                    commands
+                );
+
+            if (!requested) {
+
+                requested =
+                    await detectCommandWithAI(
+                        query,
+                        commands
+                    );
+            }
+        }
+
+        /*
+         * تنفيذ الأمر
+         */
+
+        if (
+            requested &&
+            commands
+        ) {
+
+            const command =
+                commands.get(
+                    requested.name
+                );
+
+            console.log(
+                `[LINA REPLY] Command request: ${
+                    requested.name
+                }`
+            );
+
+            const result =
+                await executeBotCommand({
+                    api,
+                    event,
+                    args:
+                        requested.args,
+                    command,
+                    Threads,
+                    Users,
+                    Currencies,
+                    models,
+                    permssion
+                });
+
+            if (result.success) {
+                return;
+            }
+
+            await sendMessage(
+                api,
+                result.reason,
+                threadID
+            );
+
+            return;
+        }
+
+        /*
+         * =================================================
+         * استمرار المحادثة
+         * =================================================
          */
 
         addConversationMessage(
@@ -1526,7 +2315,9 @@ module.exports.handleReply = async function ({
 
             await sendMessage(
                 api,
-                "الخدمات الذكية ما ردت هسي، جرّب بعد شوية.",
+                addLinaEnding(
+                    "الخدمات الذكية ما ردت هسي، جرّب بعد شوية."
+                ),
                 threadID
             );
 
@@ -1547,10 +2338,6 @@ module.exports.handleReply = async function ({
                 threadID
             );
 
-        /*
-         * نخلي الرد الجديد قابل للرد
-         */
-
         registerReply(
             info,
             event
@@ -1565,7 +2352,9 @@ module.exports.handleReply = async function ({
 
         await sendMessage(
             api,
-            "حصل خطأ وأنا بحاول أكمل المحادثة.",
+            addLinaEnding(
+                "حصل خطأ وأنا بحاول أكمل المحادثة."
+            ),
             threadID
         );
 
