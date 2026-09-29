@@ -1,8 +1,8 @@
 module.exports.config = {
   name: "اوامر",
-  version: "2.1.0",
+  version: "2.2.0",
   hasPermission: 0,
-  credits: "Yan Maglinte | تعديل: محمد إدريس",
+  credits: "محمد إدريس",
   description: "عرض جميع أوامر البوت",
   usePrefix: true,
   commandCategory: "guide",
@@ -34,34 +34,58 @@ module.exports.languages = {
   }
 };
 
-module.exports.run = async function ({ api, event, args, getText }) {
-  const { commands } = global.client;
+module.exports.run = async function ({
+  api,
+  event,
+  args,
+  getText
+}) {
   const { threadID, messageID } = event;
+  const { commands } = global.client;
+
+  /*
+   * جلب البادئة
+   */
 
   const threadSetting =
-    global.data.threadData.get(parseInt(threadID)) || {};
+    global.data?.threadData?.get(parseInt(threadID)) || {};
 
-  const prefix = threadSetting.hasOwnProperty("PREFIX")
-    ? threadSetting.PREFIX
-    : global.config.PREFIX;
+  const prefix =
+    threadSetting.PREFIX ||
+    global.config?.PREFIX ||
+    "";
 
-  const configModule =
-    global.configModule?.[this.config.name] || {};
+  /*
+   * قراءة صلاحية الأمر
+   *
+   * يدعم:
+   * hasPermission
+   * hasPermssion
+   */
 
-  const autoUnsend =
-    configModule.autoUnsend !== false;
+  const getPermission = command => {
+    if (!command?.config) return 0;
 
-  const delayUnsend =
-    Number(configModule.delayUnsend) || 60;
+    const permission =
+      command.config.hasPermission ??
+      command.config.hasPermssion ??
+      0;
+
+    const number = Number(permission);
+
+    return Number.isNaN(number) ? 0 : number;
+  };
+
+  /*
+   * طلب معلومات أمر معين
+   */
 
   const requested = String(args[0] || "").trim();
 
-  /*
-   * معلومات أمر محدد
-   */
-
   if (requested && isNaN(requested)) {
-    const command = commands.get(requested.toLowerCase());
+    const command = commands.get(
+      requested.toLowerCase()
+    );
 
     if (!command) {
       return api.sendMessage(
@@ -72,11 +96,17 @@ module.exports.run = async function ({ api, event, args, getText }) {
     }
 
     const permission =
-      Number(command.config.hasPermission || 0) === 0
-        ? getText("user")
-        : Number(command.config.hasPermission || 0) === 1
-        ? getText("adminGroup")
-        : getText("adminBot");
+      getPermission(command);
+
+    let permissionName = "عام";
+
+    if (permission === 1) {
+      permissionName = "مسؤول مجموعة";
+    }
+
+    if (permission >= 2) {
+      permissionName = "مطور";
+    }
 
     const message = getText(
       "moduleInfo",
@@ -85,7 +115,7 @@ module.exports.run = async function ({ api, event, args, getText }) {
       `${prefix}${command.config.name} ${
         command.config.usages || ""
       }`,
-      permission,
+      permissionName,
       command.config.cooldowns || 0,
       command.config.credits || "غير معروف"
     );
@@ -98,41 +128,54 @@ module.exports.run = async function ({ api, event, args, getText }) {
   }
 
   /*
-   * جميع الأوامر
+   * جمع الأوامر
    */
 
-  const allCommands = Array.from(commands.values())
-    .filter(command => command && command.config)
+  const allCommands = Array.from(
+    commands.values()
+  )
+    .filter(command =>
+      command &&
+      command.config &&
+      command.config.name
+    )
     .filter((command, index, array) => {
-      return array.findIndex(
-        item =>
+      return (
+        array.findIndex(item =>
           item.config &&
           item.config.name === command.config.name
-      ) === index;
+        ) === index
+      );
     });
 
   /*
-   * عام
+   * الأوامر العامة
+   *
    * صلاحية 0 و 1
    */
 
   const generalCommands = allCommands
-    .filter(command => {
-      return Number(command.config.hasPermission || 0) < 2;
-    })
-    .map(command => command.config.name)
+    .filter(command =>
+      getPermission(command) < 2
+    )
+    .map(command =>
+      command.config.name
+    )
     .filter(Boolean);
 
   /*
-   * مطور
+   * أوامر المطور
+   *
    * صلاحية 2 أو أعلى
    */
 
   const developerCommands = allCommands
-    .filter(command => {
-      return Number(command.config.hasPermission || 0) >= 2;
-    })
-    .map(command => command.config.name)
+    .filter(command =>
+      getPermission(command) >= 2
+    )
+    .map(command =>
+      command.config.name
+    )
     .filter(Boolean);
 
   /*
@@ -170,17 +213,34 @@ module.exports.run = async function ({ api, event, args, getText }) {
     `⊞ لـمـعـرفـة تـفـاصـيـل أمـر: ${prefix}اوامر اسم_الأمر\n` +
     "── ── ── ── ── ── ──";
 
+  /*
+   * الإرسال
+   */
+
   try {
-    const sentMessage = await api.sendMessage(
-      body,
-      threadID,
-      messageID
-    );
+    const sentMessage =
+      await api.sendMessage(
+        body,
+        threadID,
+        messageID
+      );
+
+    /*
+     * الحذف التلقائي
+     */
+
+    const configModule =
+      global.configModule?.[this.config.name] || {};
+
+    const autoUnsend =
+      configModule.autoUnsend !== false;
+
+    const delayUnsend =
+      Number(configModule.delayUnsend) || 60;
 
     if (
       autoUnsend &&
-      sentMessage &&
-      sentMessage.messageID
+      sentMessage?.messageID
     ) {
       setTimeout(async () => {
         try {
@@ -189,7 +249,7 @@ module.exports.run = async function ({ api, event, args, getText }) {
           );
         } catch (error) {
           console.error(
-            "[اوامر] Auto-unsend failed:",
+            "[اوامر] Auto-unsend:",
             error.message
           );
         }
