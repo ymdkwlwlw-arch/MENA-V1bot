@@ -1,102 +1,365 @@
-module.exports.config = {
-  name: "adc",
-  version: "1.0.1",
-  hasPermssion: 0,
-  credits: "D-Jukie",
-  description: "Apply code from buildtooldev and pastebin",
-  usePrefix: true,
-  commandCategory: "Admin",
-  usages: "[reply or text]",
-  cooldowns: 0,
-  dependencies: {
+const axios = require("axios");
+const fs = require("fs-extra");
+const path = require("path");
+const vm = require("vm");
 
-  }
+module.exports.config = {
+    name: "adc",
+    version: "3.0.0",
+    hasPermssion: 2,
+    credits: "KIROS",
+    description: "إضافة أو تحديث أمر من رابط مع فحص وتحميل تلقائي",
+    usePrefix: true,
+    commandCategory: "Admin",
+    usages: "adc اسم_الأمر + الرد على الرابط",
+    cooldowns: 5
 };
 
-module.exports.run = async function({ api, event, args }) {
-  const axios = require('axios');
-  const fs = require('fs');
-  const request = require('request');
-  const cheerio = require('cheerio');
-  const { join, resolve } = require("path");
-  const { senderID, threadID, messageID, messageReply, type } = event;
-  var name = args[0];
-  if (type == "message_reply") {
-    var text = messageReply.body;
-  }
-  if (!text && !name) return api.sendMessage('Please reply to the link you want to apply the code to or write the file name to upload the code to pastebin!', threadID, messageID);
-  if (!text && name) {
-    var data = fs.readFile(
-      `${__dirname}/${args[0]}.js`,
-      "utf-8",
-      async (err, data) => {
-        if (err) return api.sendMessage(`Command ${args[0]} does not exist!.`, threadID, messageID);
-        const { PasteClient } = require('pastebin-api')
-        const client = new PasteClient("aeGtA7rxefvTnR3AKmYwG-jxMo598whT");
-        async function pastepin(name) {
-          const url = await client.createPaste({
-            code: data,
-            expireDate: 'N',
-            format: "javascript",
-            name: name,
-            publicity: 1
-          });
-          var id = url.split('/')[3]
-          return 'https://pastebin.com/raw/' + id
-        }
-        var link = await pastepin(args[1] || 'noname')
-        return api.sendMessage(link, threadID, messageID);
-      }
-    );
-    return
-  }
-  var urlR = /https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)/
-  var url = text.match(urlR);
-  if (url[0].indexOf('pastebin') !== -1) {
-    axios.get(url[0]).then(i => {
-      var data = i.data
-      fs.writeFile(
-        `${__dirname}/${args[0]}.js`,
-        data,
-        "utf-8",
-        function(err) {
-          if (err) return api.sendMessage(`An error occurred while applying the code ${args[0]}.js`, threadID, messageID);
-          api.sendMessage(`Code applied ${args[0]}.js, use command load to use!`, threadID, messageID);
-        }
-      );
-    })
-  }
+const COMMAND_DIR = __dirname;
+const BACKUP_DIR = path.join(__dirname, "cache", "adc-backup");
 
-  if (url[0].indexOf('buildtool') !== -1 || url[0].indexOf('tinyurl.com') !== -1) {
-    const options = {
-      method: 'GET',
-      url: messageReply.body
-    };
-    request(options, function(error, response, body) {
-      if (error) return api.sendMessage('Please only reply to the link (contains nothing but links)', threadID, messageID);
-      const load = cheerio.load(body);
-      load('.language-js').each((index, el) => {
-        if (index !== 0) return;
-        var code = el.children[0].data
-        fs.writeFile(`${__dirname}/${args[0]}.js`, code, "utf-8",
-          function(err) {
-            if (err) return api.sendMessage(`An error occurred while applying the new code to "${args[0]}.js".`, threadID, messageID);
-            return api.sendMessage(`Added this code "${args[0]}.js", use command load to use!`, threadID, messageID);
-          }
-        );
-      });
-    });
-    return
-  }
-  if (url[0].indexOf('drive.google') !== -1) {
-    var id = url[0].match(/[-\w]{25,}/)
-    const path = resolve(__dirname, `${args[0]}.js`);
-    try {
-      await utils.downloadFile(`https://drive.google.com/u/0/uc?id=${id}&export=download`, path);
-      return api.sendMessage(`Added this code "${args[0]}.js" If an error occurs, change the drive file to txt!`, threadID, messageID);
-    }
-    catch (e) {
-      return api.sendMessage(`An error occurred while applying the new code to "${args[0]}.js".`, threadID, messageID);
-    }
-  }
+const blockedPatterns = [
+    /\bchild_process\b/i,
+    /\bexec\s*\(/i,
+    /\bexecFile\s*\(/i,
+    /\bspawn\s*\(/i,
+    /\bspawnSync\s*\(/i,
+    /\bexecSync\s*\(/i,
+    /\beval\s*\(/i,
+    /\bFunction\s*\(/i,
+    /\bprocess\.binding\b/i,
+    /\bprocess\.dlopen\b/i,
+    /\brm\s+-rf\b/i
+];
+
+function isSafeName(name) {
+    return /^[a-zA-Z0-9_\u0600-\u06FF-]{1,50}$/.test(name);
 }
+
+function extractURL(text) {
+    if (!text) return null;
+
+    const match = text.match(
+        /https?:\/\/[^\s<>"']+/i
+    );
+
+    return match ? match[0].replace(/[),.;]+$/, "") : null;
+}
+
+function checkCode(code) {
+    if (!code || code.trim().length < 20) {
+        return {
+            ok: false,
+            reason: "الكود فارغ أو قصير جدًا."
+        };
+    }
+
+    for (const pattern of blockedPatterns) {
+        if (pattern.test(code)) {
+            return {
+                ok: false,
+                reason: `تم العثور على تعبير محظور: ${pattern}`
+            };
+        }
+    }
+
+    try {
+        new vm.Script(code, {
+            filename: "adc-check.js"
+        });
+    } catch (error) {
+        return {
+            ok: false,
+            reason: `خطأ JavaScript: ${error.message}`
+        };
+    }
+
+    if (
+        !code.includes("module.exports") &&
+        !code.includes("exports.")
+    ) {
+        return {
+            ok: false,
+            reason: "الملف لا يبدو كأمر صالح للبوت."
+        };
+    }
+
+    return {
+        ok: true
+    };
+}
+
+async function downloadCode(url) {
+    const response = await axios.get(url, {
+        timeout: 30000,
+        responseType: "text",
+        maxContentLength: 2 * 1024 * 1024,
+        headers: {
+            "User-Agent": "KIROS-BOT/3.0"
+        }
+    });
+
+    if (typeof response.data !== "string") {
+        throw new Error("الرابط لم يُرجع كود JavaScript نصيًا.");
+    }
+
+    return response.data;
+}
+
+async function loadCommand(filePath, commandName) {
+    try {
+        delete require.cache[
+            require.resolve(filePath)
+        ];
+
+        const command = require(filePath);
+
+        if (!command || typeof command !== "object") {
+            throw new Error("الملف لا يحتوي على module صالح.");
+        }
+
+        if (
+            !command.config ||
+            !command.config.name
+        ) {
+            throw new Error(
+                "ملف الأمر لا يحتوي على module.exports.config."
+            );
+        }
+
+        if (
+            typeof command.run !== "function"
+        ) {
+            throw new Error(
+                "ملف الأمر لا يحتوي على module.exports.run."
+            );
+        }
+
+        if (
+            global.client &&
+            global.client.commands
+        ) {
+            if (
+                typeof global.client.commands.set ===
+                "function"
+            ) {
+                global.client.commands.set(
+                    command.config.name,
+                    command
+                );
+
+                if (Array.isArray(command.config.aliases)) {
+                    for (
+                        const alias of command.config.aliases
+                    ) {
+                        global.client.commands.set(
+                            alias,
+                            command
+                        );
+                    }
+                }
+            }
+        }
+
+        return {
+            ok: true,
+            command
+        };
+
+    } catch (error) {
+        return {
+            ok: false,
+            reason: error.message
+        };
+    }
+}
+
+module.exports.run = async function ({
+    api,
+    event,
+    args
+}) {
+    const {
+        threadID,
+        messageID,
+        messageReply
+    } = event;
+
+    const commandName = args[0];
+
+    const send = (text) =>
+        api.sendMessage(
+            text,
+            threadID,
+            messageID
+        );
+
+    if (!commandName) {
+        return send(
+            "╭─  ── ── ── ──  ─╮\n" +
+            "     نـظـام تـحـديـث الأوامـر\n" +
+            "╰─  ── ── ── ──  ─╯\n" +
+            "⎔ الـطـريـقـة: adc اسم_الأمر\n" +
+            "⊞ يـجـب الـرد عـلـى رسـالـة تـحـتـوي عـلـى رابـط\n" +
+            "── ── ── ── ── ── ──"
+        );
+    }
+
+    if (!isSafeName(commandName)) {
+        return send(
+            "اسم الأمر غير صالح.\n" +
+            "استخدم اسمًا بسيطًا بدون مسارات أو رموز خاصة."
+        );
+    }
+
+    const url = extractURL(
+        messageReply?.body
+    );
+
+    if (!url) {
+        return send(
+            "╭─  ── ── ── ──  ─╮\n" +
+            "     نـظـام تـحـديـث الأوامـر\n" +
+            "╰─  ── ── ── ──  ─╯\n" +
+            "⎔ الـحـالـة: لـم يـتـم الـعـثـور عـلـى رابـط\n" +
+            "⊞ الـمـطـلـوب: الـرد عـلـى رسـالـة تـحـتـوي عـلـى الـرابـط\n" +
+            "── ── ── ── ── ── ──"
+        );
+    }
+
+    try {
+        await api.setMessageReaction(
+            "⏳",
+            messageID,
+            threadID
+        );
+    } catch (e) {}
+
+    const filePath = path.join(
+        COMMAND_DIR,
+        `${commandName}.js`
+    );
+
+    const backupPath = path.join(
+        BACKUP_DIR,
+        `${commandName}_${Date.now()}.js`
+    );
+
+    try {
+        await fs.ensureDir(BACKUP_DIR);
+
+        const code = await downloadCode(url);
+
+        const check = checkCode(code);
+
+        if (!check.ok) {
+            try {
+                await api.setMessageReaction(
+                    "❌",
+                    messageID,
+                    threadID
+                );
+            } catch (e) {}
+
+            return send(
+                "╭─  ── ── ── ──  ─╮\n" +
+                "     نـظـام تـحـديـث الأوامـر\n" +
+                "╰─  ── ── ── ──  ─╯\n" +
+                "⎔ الـحـالـة: تـم رفـض الـكـود\n" +
+                `⊞ الـسـبـب: ${check.reason}\n` +
+                "── ── ── ── ── ── ──"
+            );
+        }
+
+        if (fs.existsSync(filePath)) {
+            await fs.copy(
+                filePath,
+                backupPath
+            );
+        }
+
+        await fs.writeFile(
+            filePath,
+            code,
+            "utf8"
+        );
+
+        const loaded = await loadCommand(
+            filePath,
+            commandName
+        );
+
+        if (!loaded.ok) {
+            if (fs.existsSync(backupPath)) {
+                await fs.copy(
+                    backupPath,
+                    filePath
+                );
+
+                delete require.cache[
+                    require.resolve(filePath)
+                ];
+            }
+
+            try {
+                await api.setMessageReaction(
+                    "❌",
+                    messageID,
+                    threadID
+                );
+            } catch (e) {}
+
+            return send(
+                "╭─  ── ── ── ──  ─╮\n" +
+                "     نـظـام تـحـديـث الأوامـر\n" +
+                "╰─  ── ── ── ──  ─╯\n" +
+                "⎔ الـحـالـة: فـشـل تـحـمـيـل الـأمـر\n" +
+                `⊞ الـسـبـب: ${loaded.reason}\n` +
+                "⊞ تـمـت إعـادة الـنـسـخـة الـسـابـقـة\n" +
+                "── ── ── ── ── ── ──"
+            );
+        }
+
+        try {
+            await api.setMessageReaction(
+                "✅",
+                messageID,
+                threadID
+            );
+        } catch (e) {}
+
+        return send(
+            "╭─  ── ── ── ──  ─╮\n" +
+            "     نـظـام تـحـديـث الأوامـر\n" +
+            "╰─  ── ── ── ──  ─╯\n" +
+            `⎔ الـأمـر: ${commandName}\n` +
+            "⎔ الـحـالـة: تـم الـتـحـديـث بـنـجـاح\n" +
+            "⊞ الـتـحـمـيـل: تـم تـلـقـائـيـًا\n" +
+            "⊞ الـنـسـخـة الـسـابـقـة: تـم حـفـظـهـا\n" +
+            "── ── ── ── ── ── ──"
+        );
+
+    } catch (error) {
+        console.error(
+            "[ADC]",
+            error
+        );
+
+        try {
+            await api.setMessageReaction(
+                "❌",
+                messageID,
+                threadID
+            );
+        } catch (e) {}
+
+        return send(
+            "╭─  ── ── ── ──  ─╮\n" +
+            "     نـظـام تـحـديـث الأوامـر\n" +
+            "╰─  ── ── ── ──  ─╯\n" +
+            "⎔ الـحـالـة: حـدث خـطـأ\n" +
+            `⊞ الـسـبـب: ${error.message || "غير معروف"}\n` +
+            "── ── ── ── ── ── ──"
+        );
+    }
+};
