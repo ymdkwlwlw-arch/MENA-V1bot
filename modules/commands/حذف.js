@@ -1,7 +1,7 @@
 module.exports.config = {
     name: "حذف",
     aliases: ["delete", "مسح"],
-    version: "1.0.0",
+    version: "2.0.0",
     hasPermssion: 0,
     credits: "KIROS",
     description: "حذف رسالة البوت عند الرد عليها",
@@ -12,27 +12,33 @@ module.exports.config = {
 };
 
 module.exports.run = async function ({ api, event }) {
-    try {
-        // يجب أن يكون الأمر رداً على رسالة
-        if (!event.messageReply) return;
+    const { messageReply, threadID, messageID } = event;
 
-        const repliedMessage = event.messageReply;
-
-        // الحصول على ID البوت الحالي
-        const botID = String(api.getCurrentUserID());
-
-        // التأكد أن الرسالة التي يتم الرد عليها من البوت
-        const senderID = String(repliedMessage.senderID || "");
-
-        if (senderID !== botID) return;
-
-        // حذف رسالة البوت التي تم الرد عليها
-        await api.unsendMessage(repliedMessage.messageID);
-
-        // لا يوجد أي رد
+    // لازم يكون في رد
+    if (!messageReply) {
         return;
-    } catch (error) {
-        // صامت تماماً حتى عند حدوث خطأ
-        console.error("[حذف] Error:", error.message);
     }
+
+    const botID = String(api.getCurrentUserID());
+    const repliedSenderID = String(messageReply.senderID || "");
+
+    // الرسالة ليست من البوت
+    if (repliedSenderID !== botID) {
+        return api.sendMessage(
+            "دي م رسالتي 🦧",
+            threadID,
+            messageID
+        );
+    }
+
+    // حذف رسالة البوت
+    try {
+        return await api.unsendMessage(messageReply.messageID);
+    } catch (error) {
+        console.error("[حذف] Error:", error);
+    }
+};
+
+module.exports.languages = {
+    ar: {}
 };
