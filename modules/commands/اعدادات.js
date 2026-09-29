@@ -1,6 +1,6 @@
 module.exports.config = {
   name: "اعدادات",
-  version: "4.0.0",
+  version: "5.0.0",
   hasPermssion: 1,
   credits: "KIROS",
   description: "إعدادات حماية المجموعة",
@@ -10,48 +10,214 @@ module.exports.config = {
   usePrefix: true
 };
 
-function buildMenu(settings) {
-  return `╭─❖ [ Settings ] ❖─╮
-│
-│ 1. حماية اسم المجموعة  [${settings.antiName ? "✅" : "❌"}]
-│ 2. حماية صورة المجموعة [${settings.antiImage ? "✅" : "❌"}]
-│ 3. حماية الكنية        [${settings.antiNickname ? "✅" : "❌"}]
-│ 4. الإشعارات           [${settings.notifications ? "✅" : "❌"}]
-│
-╰──────────────────────╯`;
+const axios = require("axios");
+
+const API_CONFIG =
+  "https://raw.githubusercontent.com/shaonproject/Shaon/main/api.json";
+
+/*
+ * رفع صورة المجموعة والحصول على الرابط المباشر
+ * باستخدام نفس API الخاص بأمر رفع
+ */
+async function uploadImage(imageUrl) {
+  if (!imageUrl) {
+    throw new Error("لا يوجد رابط للصورة");
+  }
+
+  const apis = await axios.get(API_CONFIG, {
+    timeout: 15000
+  });
+
+  const Shaon = apis.data?.imgur;
+
+  if (!Shaon) {
+    throw new Error("لم يتم العثور على API imgur");
+  }
+
+  const url = encodeURIComponent(imageUrl);
+
+  const upload = await axios.get(
+    `${Shaon}/imgur?link=${url}`,
+    {
+      timeout: 30000
+    }
+  );
+
+  const result =
+    upload.data?.uploaded?.image;
+
+  if (!result) {
+    throw new Error("فشل رفع الصورة");
+  }
+
+  return result;
 }
+
+
+/*
+ * التأكد أن المستخدم مسؤول في المجموعة
+ */
+async function isAdmin(api, threadID, userID) {
+  try {
+    const info =
+      await api.getThreadInfo(threadID);
+
+    const admins =
+      Array.isArray(info.adminIDs)
+        ? info.adminIDs
+        : [];
+
+    return admins.some(
+      item =>
+        String(item.id) ===
+        String(userID)
+    );
+
+  } catch (_) {
+    return false;
+  }
+}
+
+
+/*
+ * بناء قائمة الإعدادات
+ */
+function buildMenu(settings) {
+  return `╭─ إعدادات الحماية ─╮
+│
+│ 1. حماية اسم المجموعة  [${settings.antiName ? "مفعل" : "متوقف"}]
+│ 2. حماية صورة المجموعة [${settings.antiImage ? "مفعل" : "متوقف"}]
+│ 3. حماية الكنية        [${settings.antiNickname ? "مفعل" : "متوقف"}]
+│ 4. الإشعارات           [${settings.notifications ? "مفعل" : "متوقف"}]
+│
+╰──────────────────────╯
+
+↳ أرسل رقم الإعداد المطلوب
+مثال:
+1
+2
+3`;
+}
+
+
+/*
+ * إنشاء Snapshot
+ *
+ * الاسم:
+ * threadName
+ *
+ * الصورة:
+ * يتم رفعها إلى API وحفظ الرابط الناتج
+ *
+ * الكنيات:
+ * نحفظ حتى الأعضاء الذين ليس لديهم كنية
+ */
+async function createSnapshot(api, threadInfo, saveImage) {
+
+  const nicknames = {};
+
+  const participants =
+    Array.isArray(threadInfo.participantIDs)
+      ? threadInfo.participantIDs
+      : [];
+
+  const currentNicknames =
+    threadInfo.nicknames || {};
+
+  for (const id of participants) {
+    nicknames[String(id)] =
+      currentNicknames[id] || "";
+  }
+
+  let imageSrc =
+    threadInfo.imageSrc || "";
+
+  /*
+   * إذا حماية الصورة مفعلة
+   * نرفع الصورة ونحفظ الرابط الجديد
+   */
+  if (saveImage && imageSrc) {
+    imageSrc =
+      await uploadImage(imageSrc);
+  }
+
+  return {
+    name:
+      threadInfo.threadName || "",
+
+    imageSrc,
+
+    nicknames
+  };
+}
+
 
 module.exports.run = async function ({
   api,
   event,
   Threads
 }) {
+
   const {
     threadID,
     messageID,
     senderID
   } = event;
 
+  /*
+   * الأمر لمسؤولي المجموعة فقط
+   */
+  const admin =
+    await isAdmin(
+      api,
+      threadID,
+      senderID
+    );
+
+  if (!admin) {
+    return api.sendMessage(
+      "هذا الأمر لمسؤولي المجموعة فقط.",
+      threadID,
+      messageID
+    );
+  }
+
   try {
-    const threadData = await Threads.getData(threadID);
-    const data = threadData?.data || {};
+
+    const threadData =
+      await Threads.getData(threadID);
+
+    const data =
+      threadData?.data || {};
+
+    const old =
+      data.antiSettings || {};
 
     const settings = {
-      antiName: data.antiSettings?.antiName === true,
-      antiImage: data.antiSettings?.antiImage === true,
-      antiNickname: data.antiSettings?.antiNickname === true,
-      notifications: data.antiSettings?.notifications === true
+      antiName:
+        old.antiName === true,
+
+      antiImage:
+        old.antiImage === true,
+
+      antiNickname:
+        old.antiNickname === true,
+
+      notifications:
+        old.notifications === true
     };
 
-    const menu = buildMenu(settings);
+    const menu =
+      buildMenu(settings);
 
     api.sendMessage(
       menu,
       threadID,
-      async (err, info) => {
+      (err, info) => {
+
         if (err || !info) {
           console.error(
-            "[اعدادات] Send menu error:",
+            "[اعدادات] Menu error:",
             err
           );
           return;
@@ -65,31 +231,40 @@ module.exports.run = async function ({
           name: "اعدادات",
           messageID: info.messageID,
           author: senderID,
-          settings: { ...settings }
+          settings: {
+            ...settings
+          }
         });
+
       },
       messageID
     );
 
   } catch (error) {
+
     console.error(
       "[اعدادات] Error:",
       error
     );
 
     return api.sendMessage(
-      "حدث خطأ أثناء تحميل إعدادات الحماية.",
-      threadID
+      "حدث خطأ أثناء تحميل الإعدادات.",
+      threadID,
+      messageID
     );
   }
 };
 
 
+/*
+ * استقبال اختيار الأرقام
+ */
 module.exports.handleReply = async function ({
   api,
   event,
   handleReply
 }) {
+
   const {
     threadID,
     body,
@@ -104,24 +279,32 @@ module.exports.handleReply = async function ({
     return;
   }
 
-  const choices = String(body || "")
-    .match(/\d+/g);
+  const choices =
+    String(body || "")
+      .match(/[1-4]/g);
 
   if (!choices) {
     return api.sendMessage(
-      "أرسل أرقام الإعدادات فقط، مثال: 1 3 4",
+      "أرسل الأرقام من 1 إلى 4 فقط.",
       threadID,
-      null,
       messageID
     );
   }
+
+  /*
+   * منع تكرار نفس الرقم
+   */
+  const unique =
+    [...new Set(choices)];
 
   const settings = {
     ...handleReply.settings
   };
 
-  for (const num of choices) {
+  for (const num of unique) {
+
     switch (num) {
+
       case "1":
         settings.antiName =
           !settings.antiName;
@@ -144,8 +327,9 @@ module.exports.handleReply = async function ({
     }
   }
 
+
   /*
-   * حذف قائمة الإعدادات الأصلية
+   * حذف قائمة الإعدادات فورًا
    */
   try {
     await api.unsendMessage(
@@ -153,22 +337,39 @@ module.exports.handleReply = async function ({
     );
   } catch (_) {}
 
-  const confirmation =
-`╭─❖ [ Settings ] ❖─╮
-│
-│ 1. حماية اسم المجموعة  [${settings.antiName ? "✅" : "❌"}]
-│ 2. حماية صورة المجموعة [${settings.antiImage ? "✅" : "❌"}]
-│ 3. حماية الكنية        [${settings.antiNickname ? "✅" : "❌"}]
-│ 4. الإشعارات           [${settings.notifications ? "✅" : "❌"}]
-│
-╰──────────────────────╯
 
-⌲ تفاعل بـ 👍 لتثبيت التغييرات`;
+  /*
+   * إزالة الـ handleReply القديم
+   */
+  if (Array.isArray(global.client.handleReply)) {
+
+    global.client.handleReply =
+      global.client.handleReply.filter(
+        item =>
+          String(item.messageID) !==
+          String(handleReply.messageID)
+      );
+  }
+
+
+  /*
+   * رسالة التأكيد
+   */
+  const confirmation =
+`تم تعديل إعدادات الحماية.
+
+1. حماية الاسم  : ${settings.antiName ? "مفعل" : "متوقف"}
+2. حماية الصورة : ${settings.antiImage ? "مفعل" : "متوقف"}
+3. حماية الكنية : ${settings.antiNickname ? "مفعل" : "متوقف"}
+4. الإشعارات    : ${settings.notifications ? "مفعل" : "متوقف"}
+
+👍 للتأكيد والحفظ`;
 
   api.sendMessage(
     confirmation,
     threadID,
     (err, info) => {
+
       if (err || !info) {
         console.error(
           "[اعدادات] Confirmation error:",
@@ -185,21 +386,25 @@ module.exports.handleReply = async function ({
         name: "اعدادات",
         messageID: info.messageID,
         author: senderID,
-        newSettings: settings,
-        sourceMessageID: handleReply.messageID
+        newSettings: settings
       });
+
     },
     messageID
   );
 };
 
 
+/*
+ * تثبيت الإعدادات عند 👍
+ */
 module.exports.handleReaction = async function ({
   api,
   event,
   handleReaction,
   Threads
 }) {
+
   const {
     threadID,
     reaction,
@@ -217,7 +422,24 @@ module.exports.handleReaction = async function ({
     return;
   }
 
+
+  /*
+   * التأكد مرة أخرى أن الشخص مسؤول
+   */
+  const admin =
+    await isAdmin(
+      api,
+      threadID,
+      userID
+    );
+
+  if (!admin) {
+    return;
+  }
+
+
   try {
+
     const threadInfo =
       await api.getThreadInfo(threadID);
 
@@ -236,63 +458,108 @@ module.exports.handleReaction = async function ({
           String(botID)
       );
 
+
     const finalSettings = {
       ...handleReaction.newSettings
     };
 
-    let warning = "";
 
     /*
-     * حماية الصورة والكنية تحتاج البوت أدمن
+     * الصورة والكنية تحتاج البوت أدمن
      */
+    let warning = "";
+
     if (!botIsAdmin) {
+
       if (finalSettings.antiImage) {
-        finalSettings.antiImage = false;
+
+        finalSettings.antiImage =
+          false;
+
         warning +=
           "\nحماية الصورة تحتاج أن يكون البوت أدمن.";
       }
 
       if (finalSettings.antiNickname) {
-        finalSettings.antiNickname = false;
+
+        finalSettings.antiNickname =
+          false;
+
         warning +=
           "\nحماية الكنية تحتاج أن يكون البوت أدمن.";
       }
     }
 
+
+    /*
+     * إنشاء Snapshot جديد
+     */
+    let snapshot;
+
+    try {
+
+      snapshot =
+        await createSnapshot(
+          api,
+          threadInfo,
+          finalSettings.antiImage
+        );
+
+    } catch (error) {
+
+      console.error(
+        "[اعدادات] Snapshot error:",
+        error
+      );
+
+      /*
+       * إذا فشل رفع الصورة
+       * لا نفعل حماية الصورة
+       */
+      if (finalSettings.antiImage) {
+
+        finalSettings.antiImage =
+          false;
+
+        warning +=
+          "\nتعذر حفظ صورة المجموعة، تم إيقاف حماية الصورة.";
+      }
+
+      snapshot =
+        await createSnapshot(
+          api,
+          threadInfo,
+          false
+        );
+    }
+
+
+    /*
+     * حفظ البيانات
+     */
     const current =
       await Threads.getData(threadID);
 
     const data =
       current?.data || {};
 
-    data.antiSettings = finalSettings;
+    data.antiSettings =
+      finalSettings;
 
-    /*
-     * حفظ الحالة الحالية كمرجع للحماية
-     */
-    data.snapshot = {
-      name:
-        threadInfo.threadName || "",
+    data.snapshot =
+      snapshot;
 
-      imageSrc:
-        threadInfo.imageSrc || "",
-
-      nicknames:
-        threadInfo.nicknames || {}
-    };
-
-    /*
-     * حالة الحماية الخاصة بالصور
-     */
     data.antiProtection = {
       imageRestoring: false,
       lastImageRestore: 0
     };
 
+
     await Threads.setData(
       threadID,
       { data }
     );
+
 
     /*
      * حذف رسالة التأكيد
@@ -303,19 +570,36 @@ module.exports.handleReaction = async function ({
       );
     } catch (_) {}
 
-    const status =
+
+    /*
+     * تنظيف handleReaction
+     */
+    if (
+      Array.isArray(
+        global.client.handleReaction
+      )
+    ) {
+
+      global.client.handleReaction =
+        global.client.handleReaction.filter(
+          item =>
+            String(item.messageID) !==
+            String(handleReaction.messageID)
+        );
+    }
+
+
+    return api.sendMessage(
 `تم حفظ إعدادات الحماية.
 الاسم: ${finalSettings.antiName ? "مفعل" : "متوقف"}
 الصورة: ${finalSettings.antiImage ? "مفعل" : "متوقف"}
 الكنية: ${finalSettings.antiNickname ? "مفعل" : "متوقف"}
-الإشعارات: ${finalSettings.notifications ? "مفعل" : "متوقف"}${warning}`;
-
-    return api.sendMessage(
-      status,
+الإشعارات: ${finalSettings.notifications ? "مفعل" : "متوقف"}${warning}`,
       threadID
     );
 
   } catch (error) {
+
     console.error(
       "[اعدادات] Save Error:",
       error
