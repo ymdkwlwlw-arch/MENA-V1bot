@@ -6,13 +6,13 @@ const { GoogleGenAI } = require("@google/genai");
 module.exports.config = {
     name: "ميرا",
     aliases: ["mira", "ميراai"],
-    version: "1.3.0",
+    version: "1.4.0",
     hasPermssion: 0,
     credits: "KIROS",
-    description: "ميرا — محللة ذكية للنصوص والصور والروابط والملفات",
+    description: "ميرا — تحليل النصوص والصور والفيديوهات والروابط والملفات",
     usePrefix: false,
     commandCategory: "الذكاء الاصطناعي",
-    usages: "ميرا [سؤالك] أو بالرد على صورة/ملف",
+    usages: "ميرا [سؤالك] أو بالرد على محتوى",
     cooldowns: 3
 };
 
@@ -21,24 +21,12 @@ module.exports.config = {
    CONFIG
 ========================================================= */
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-
-/*
- * النموذج الأساسي + النماذج الاحتياطية
- *
- * يمكن تغيير النموذج الأساسي من Render/Termux:
- *
- * MIRA_MODEL=gemini-3.8-flash
- */
+const GEMINI_API_KEY =
+    process.env.GEMINI_API_KEY;
 
 const PRIMARY_MODEL =
     process.env.MIRA_MODEL ||
     "gemini-3.8-flash";
-
-
-/*
- * ترتيب النماذج الاحتياطية
- */
 
 const FALLBACK_MODELS = [
     PRIMARY_MODEL,
@@ -47,44 +35,17 @@ const FALLBACK_MODELS = [
     "gemini-3.5-flash"
 ];
 
-
-/*
- * إزالة التكرار
- */
-
 const MODELS = [
     ...new Set(
         FALLBACK_MODELS.filter(Boolean)
     )
 ];
 
-
-/*
- * عدد المحاولات داخل نفس النموذج
- */
-
 const RETRIES_PER_MODEL = 1;
-
-
-/*
- * التأخير قبل إعادة المحاولة
- * بالميلي ثانية
- */
-
 const RETRY_DELAY = 2500;
 
-
-/*
- * الحد الأقصى للملف
- */
-
 const MAX_FILE_SIZE =
-    25 * 1024 * 1024;
-
-
-/*
- * مجلد التخزين المؤقت
- */
+    100 * 1024 * 1024;
 
 const CACHE_DIR =
     path.join(
@@ -93,42 +54,43 @@ const CACHE_DIR =
         "mira"
     );
 
-
-/*
- * ذاكرة المحادثة
- */
-
 const MAX_HISTORY = 10;
 
 const conversations = new Map();
 
 
 /* =========================================================
-   MIRA SYSTEM
+   SYSTEM
 ========================================================= */
 
 const MIRA_SYSTEM = `
 أنتِ ميرا، مساعدة ذكاء اصطناعي متعددة الوسائط داخل بوت Messenger.
 
+قد يتم إعطاؤك:
+- نص.
+- صورة.
+- فيديو.
+- صوت.
+- ملف.
+- رابط صفحة.
+- رابط مباشر لوسائط.
+
 وظيفتك:
-- تحليل النصوص.
-- تحليل الصور.
-- استخراج النصوص والمعلومات من الصور.
-- تحليل الروابط وصفحات الويب المتاحة.
-- تحليل الملفات المدعومة.
-- تلخيص المحتوى.
-- استخراج البيانات والجداول.
-- مقارنة المعلومات.
-- شرح المحتوى بطريقة واضحة.
-- الإجابة على أسئلة المستخدم المتعلقة بالمحتوى المرسل.
+- تحليل المحتوى.
+- تلخيصه.
+- استخراج المعلومات.
+- وصف الصور والفيديوهات.
+- الإجابة عن أسئلة المستخدم حول المحتوى.
+- استخراج النصوص الظاهرة.
+- تحليل الجداول والبيانات عندما تكون واضحة.
+- ذكر الطوابع الزمنية في الفيديو عند الحاجة.
 
 القواعد:
 - استخدمي العربية الواضحة ويمكن استخدام اللهجة السودانية عند الحاجة.
-- لا تختلقي معلومات.
-- إذا لم تتمكني من الوصول إلى رابط أو ملف، اذكري ذلك بوضوح.
-- ميزي بين المعلومات المؤكدة والتخمين.
-- إذا كانت الصورة غير واضحة، اذكري أن النتيجة غير مؤكدة.
-- عند وجود رابط، اعتمدي على المحتوى الذي تم الوصول إليه فعليًا.
+- لا تختلقي معلومات غير موجودة في المحتوى.
+- إذا كان المحتوى غير واضح، اذكري ذلك.
+- فرّقي بين المعلومات المؤكدة والاستنتاج.
+- عند تحليل فيديو، اذكري الطابع الزمني عندما يكون مهمًا.
 - لا تكشفي API keys أو كلمات المرور أو AppState أو session cookies.
 - لا تنفذي Shell أو JavaScript يرسله المستخدم.
 - لا تدّعي تنفيذ عملية خارجية لم يتم تنفيذها.
@@ -136,7 +98,7 @@ const MIRA_SYSTEM = `
 
 
 /* =========================================================
-   SLEEP
+   UTILS
 ========================================================= */
 
 function sleep(ms) {
@@ -146,38 +108,21 @@ function sleep(ms) {
 }
 
 
-/* =========================================================
-   ERROR HELPERS
-========================================================= */
-
 function getErrorText(error) {
-
     try {
-
-        if (
-            error?.message
-        ) {
-            return String(
-                error.message
-            );
+        if (error?.message) {
+            return String(error.message);
         }
 
-        if (
-            error?.error?.message
-        ) {
-            return String(
-                error.error.message
-            );
+        if (error?.error?.message) {
+            return String(error.error.message);
         }
 
-        if (
-            error?.response?.data
-        ) {
+        if (error?.response?.data) {
             return JSON.stringify(
                 error.response.data
             );
         }
-
     } catch (_) {}
 
     return String(
@@ -186,17 +131,9 @@ function getErrorText(error) {
 }
 
 
-/*
- * هل الخطأ مؤقت ويمكن تجربة نموذج آخر؟
- */
-
 function isTemporaryModelError(error) {
-
     const text =
-        getErrorText(
-            error
-        ).toLowerCase();
-
+        getErrorText(error).toLowerCase();
 
     const status =
         Number(
@@ -206,90 +143,61 @@ function isTemporaryModelError(error) {
             0
         );
 
-
-    if (
+    return (
         status === 503 ||
         status === 502 ||
-        status === 504
-    ) {
-        return true;
-    }
-
-
-    if (
+        status === 504 ||
         text.includes("503") ||
         text.includes("unavailable") ||
         text.includes("high demand") ||
         text.includes("overloaded") ||
         text.includes("temporarily unavailable") ||
         text.includes("service unavailable")
-    ) {
-        return true;
-    }
-
-
-    return false;
+    );
 }
 
 
-/* =========================================================
-   GEMINI CLIENT
-========================================================= */
-
 function createAI() {
-
     if (!GEMINI_API_KEY) {
         throw new Error(
             "GEMINI_API_KEY غير موجود."
         );
     }
 
-
     return new GoogleGenAI({
-        apiKey:
-            GEMINI_API_KEY
+        apiKey: GEMINI_API_KEY
     });
 }
 
 
 /* =========================================================
-   MODEL EXECUTOR
+   MODEL FALLBACK
 ========================================================= */
 
 async function generateWithFallback(
     requestBuilder
 ) {
-
     let lastError = null;
-
 
     for (
         let modelIndex = 0;
         modelIndex < MODELS.length;
         modelIndex++
     ) {
-
         const model =
             MODELS[modelIndex];
-
 
         for (
             let retry = 0;
             retry <= RETRIES_PER_MODEL;
             retry++
         ) {
-
             try {
-
                 console.log(
-                    `[MIRA] محاولة النموذج: ${model}` +
-                    ` | retry=${retry}`
+                    `[MIRA] محاولة: ${model} | retry=${retry}`
                 );
 
-
-                const ai =
-                    createAI();
-
+                const ai = createAI();
 
                 const request =
                     requestBuilder(
@@ -297,42 +205,27 @@ async function generateWithFallback(
                         ai
                     );
 
-
                 const response =
                     await ai.models.generateContent(
                         request
                     );
 
-
                 console.log(
-                    `[MIRA] النموذج نجح: ${model}`
+                    `[MIRA] نجاح النموذج: ${model}`
                 );
-
 
                 return {
                     response,
                     model
                 };
 
-
             } catch (error) {
-
-                lastError =
-                    error;
-
+                lastError = error;
 
                 console.error(
-                    `[MIRA] فشل النموذج ${model}:`,
-                    getErrorText(
-                        error
-                    )
+                    `[MIRA] فشل ${model}:`,
+                    getErrorText(error)
                 );
-
-
-                /*
-                 * إذا لم يكن الخطأ 503
-                 * لا ننتقل إلى نموذج آخر.
-                 */
 
                 if (
                     !isTemporaryModelError(
@@ -342,52 +235,21 @@ async function generateWithFallback(
                     throw error;
                 }
 
-
-                /*
-                 * إعادة محاولة واحدة
-                 * لنفس النموذج.
-                 */
-
                 if (
-                    retry <
-                    RETRIES_PER_MODEL
+                    retry < RETRIES_PER_MODEL
                 ) {
-
-                    const delay =
-                        RETRY_DELAY *
-                        Math.pow(
-                            2,
-                            retry
-                        );
-
-
-                    console.log(
-                        `[MIRA] إعادة المحاولة بعد ${delay}ms`
-                    );
-
-
                     await sleep(
-                        delay
+                        RETRY_DELAY *
+                        Math.pow(2, retry)
                     );
-
-                    continue;
                 }
-
-
-                /*
-                 * انتهت محاولات النموذج.
-                 * ننتقل للنموذج التالي.
-                 */
-
-                console.log(
-                    `[MIRA] الانتقال للنموذج الاحتياطي...`
-                );
-
-                break;
             }
         }
-    }
 
+        console.log(
+            `[MIRA] الانتقال للنموذج التالي...`
+        );
+    }
 
     throw (
         lastError ||
@@ -399,14 +261,13 @@ async function generateWithFallback(
 
 
 /* =========================================================
-   CONVERSATION
+   MEMORY
 ========================================================= */
 
 function getKey(
     threadID,
     senderID
 ) {
-
     return `${threadID}:${senderID}`;
 }
 
@@ -415,38 +276,27 @@ function getConversation(
     threadID,
     senderID
 ) {
-
     const key =
         getKey(
             threadID,
             senderID
         );
 
-
-    if (
-        !conversations.has(key)
-    ) {
-
+    if (!conversations.has(key)) {
         conversations.set(
             key,
             {
                 messages: [],
-                lastActivity:
-                    Date.now()
+                lastActivity: Date.now()
             }
         );
     }
 
-
     const conversation =
-        conversations.get(
-            key
-        );
-
+        conversations.get(key);
 
     conversation.lastActivity =
         Date.now();
-
 
     return conversation;
 }
@@ -458,29 +308,21 @@ function addHistory(
     role,
     content
 ) {
-
     const conversation =
         getConversation(
             threadID,
             senderID
         );
 
-
     conversation.messages.push({
-
         role,
-
-        content:
-            String(content)
-
+        content: String(content)
     });
-
 
     if (
         conversation.messages.length >
         MAX_HISTORY
     ) {
-
         conversation.messages =
             conversation.messages.slice(
                 -MAX_HISTORY
@@ -493,20 +335,17 @@ function buildHistory(
     threadID,
     senderID
 ) {
-
     const conversation =
         getConversation(
             threadID,
             senderID
         );
 
-
     if (
         !conversation.messages.length
     ) {
         return "";
     }
-
 
     return conversation.messages
         .map(
@@ -517,39 +356,21 @@ function buildHistory(
 }
 
 
-/*
- * تنظيف الذاكرة القديمة
- */
+setInterval(() => {
+    const now = Date.now();
 
-setInterval(
-    () => {
-
-        const now =
-            Date.now();
-
-
-        for (
-            const [
-                key,
-                value
-            ] of conversations
+    for (
+        const [key, value]
+        of conversations
+    ) {
+        if (
+            now - value.lastActivity >
+            60 * 60 * 1000
         ) {
-
-            if (
-                now -
-                value.lastActivity >
-                60 * 60 * 1000
-            ) {
-
-                conversations.delete(
-                    key
-                );
-            }
+            conversations.delete(key);
         }
-
-    },
-    10 * 60 * 1000
-);
+    }
+}, 10 * 60 * 1000);
 
 
 /* =========================================================
@@ -561,14 +382,11 @@ async function reaction(
     messageID,
     emoji
 ) {
-
     try {
-
         if (
             typeof api.setMessageReaction ===
             "function"
         ) {
-
             await api.setMessageReaction(
                 emoji,
                 messageID,
@@ -576,7 +394,6 @@ async function reaction(
                 true
             );
         }
-
     } catch (_) {}
 }
 
@@ -590,32 +407,26 @@ async function typing(
     threadID,
     state
 ) {
-
     try {
-
         if (
             typeof api.sendTypingIndicator ===
             "function"
         ) {
-
             return await api.sendTypingIndicator(
                 threadID,
                 state
             );
         }
 
-
         if (
             typeof api.sendTyping ===
             "function"
         ) {
-
             return await api.sendTyping(
                 threadID,
                 state
             );
         }
-
     } catch (_) {}
 }
 
@@ -630,95 +441,63 @@ function send(
     threadID,
     replyTo
 ) {
-
-    return new Promise(
-        resolve => {
-
-            const callback =
-                (
-                    error,
-                    info
-                ) => {
-
-                    if (error) {
-
-                        console.error(
-                            "[MIRA] sendMessage:",
-                            error.message
-                        );
-
-                        return resolve(
-                            null
-                        );
-                    }
-
-
-                    resolve(
-                        info || null
-                    );
-                };
-
-
-            try {
-
-                if (replyTo) {
-
-                    api.sendMessage(
-                        {
-                            body:
-                                message
-                        },
-                        threadID,
-                        callback,
-                        replyTo
+    return new Promise(resolve => {
+        const callback =
+            (error, info) => {
+                if (error) {
+                    console.error(
+                        "[MIRA] sendMessage:",
+                        error.message
                     );
 
-                } else {
-
-                    api.sendMessage(
-                        message,
-                        threadID,
-                        callback
-                    );
+                    return resolve(null);
                 }
 
-            } catch (error) {
+                resolve(info || null);
+            };
 
-                console.error(
-                    "[MIRA] send exception:",
-                    error.message
+        try {
+            if (replyTo) {
+                api.sendMessage(
+                    {
+                        body: message
+                    },
+                    threadID,
+                    callback,
+                    replyTo
                 );
-
-                resolve(null);
+            } else {
+                api.sendMessage(
+                    message,
+                    threadID,
+                    callback
+                );
             }
+        } catch (error) {
+            console.error(
+                "[MIRA] send exception:",
+                error.message
+            );
+
+            resolve(null);
         }
-    );
+    });
 }
 
 
 /* =========================================================
-   URL EXTRACTION
+   URLS
 ========================================================= */
 
-function extractURLs(
-    text
-) {
-
-    if (!text) {
-        return [];
-    }
-
+function extractURLs(text) {
+    if (!text) return [];
 
     const matches =
         String(text).match(
             /https?:\/\/[^\s<>"']+/gi
         );
 
-
-    if (!matches) {
-        return [];
-    }
-
+    if (!matches) return [];
 
     return [
         ...new Set(
@@ -741,20 +520,15 @@ function extractURLs(
 function getAttachmentType(
     attachment
 ) {
-
     const type =
         String(
-            attachment?.type ||
-            ""
+            attachment?.type || ""
         ).toLowerCase();
-
 
     const url =
         String(
-            attachment?.url ||
-            ""
+            attachment?.url || ""
         ).toLowerCase();
-
 
     const name =
         String(
@@ -763,10 +537,8 @@ function getAttachmentType(
             ""
         ).toLowerCase();
 
-
     const source =
         `${type} ${url} ${name}`;
-
 
     if (
         type.includes("photo") ||
@@ -774,20 +546,16 @@ function getAttachmentType(
         /\.(jpg|jpeg|png|webp|gif)(\?|$)/i
             .test(source)
     ) {
-
         return "image";
     }
 
-
     if (
         type.includes("video") ||
-        /\.(mp4|mov|webm|mkv)(\?|$)/i
+        /\.(mp4|mov|webm|mkv|avi|wmv|flv|3gp)(\?|$)/i
             .test(source)
     ) {
-
         return "video";
     }
-
 
     if (
         type.includes("audio") ||
@@ -795,20 +563,16 @@ function getAttachmentType(
         /\.(mp3|wav|m4a|ogg)(\?|$)/i
             .test(source)
     ) {
-
         return "audio";
     }
-
 
     if (
         type.includes("file") ||
         /\.(pdf|txt|csv|json|docx|xlsx)(\?|$)/i
             .test(source)
     ) {
-
         return "file";
     }
-
 
     return "unknown";
 }
@@ -821,7 +585,6 @@ function getAttachmentType(
 function getExtension(
     attachment
 ) {
-
     const name =
         String(
             attachment?.filename ||
@@ -829,17 +592,14 @@ function getExtension(
             ""
         );
 
-
     const match =
         name.match(
             /\.[a-z0-9]{1,8}$/i
         );
 
-
     if (match) {
         return match[0];
     }
-
 
     const url =
         String(
@@ -847,17 +607,14 @@ function getExtension(
             ""
         );
 
-
     const urlMatch =
         url.match(
-            /\.(jpg|jpeg|png|webp|gif|pdf|txt|json|csv|mp4|mp3|wav|m4a|ogg)(?:\?|$)/i
+            /\.(jpg|jpeg|png|webp|gif|pdf|txt|json|csv|mp4|mpeg|mov|avi|webm|wmv|flv|3gp|mp3|wav|m4a|ogg)(?:\?|$)/i
         );
-
 
     if (urlMatch) {
         return `.${urlMatch[1]}`;
     }
-
 
     return ".bin";
 }
@@ -872,150 +629,117 @@ function getMimeType(
     attachment,
     kind
 ) {
-
     const type =
         String(
-            attachment?.type ||
-            ""
+            attachment?.type || ""
         ).toLowerCase();
-
 
     if (
         kind === "image" ||
         type.includes("image") ||
         type.includes("photo")
     ) {
-
         if (
-            /\.png$/i.test(
-                filePath
-            )
+            /\.png$/i.test(filePath)
         ) {
             return "image/png";
         }
 
-
         if (
-            /\.webp$/i.test(
-                filePath
-            )
+            /\.webp$/i.test(filePath)
         ) {
             return "image/webp";
         }
 
-
         if (
-            /\.gif$/i.test(
-                filePath
-            )
+            /\.gif$/i.test(filePath)
         ) {
             return "image/gif";
         }
 
-
         return "image/jpeg";
     }
-
 
     if (
         kind === "video" ||
         type.includes("video")
     ) {
-
         if (
-            /\.webm$/i.test(
-                filePath
-            )
+            /\.webm$/i.test(filePath)
         ) {
             return "video/webm";
         }
 
-
         if (
-            /\.mov$/i.test(
-                filePath
-            )
+            /\.mov$/i.test(filePath)
         ) {
-            return "video/quicktime";
+            return "video/mov";
         }
 
+        if (
+            /\.avi$/i.test(filePath)
+        ) {
+            return "video/avi";
+        }
+
+        if (
+            /\.wmv$/i.test(filePath)
+        ) {
+            return "video/wmv";
+        }
 
         return "video/mp4";
     }
-
 
     if (
         kind === "audio" ||
         type.includes("audio") ||
         type.includes("voice")
     ) {
-
         if (
-            /\.wav$/i.test(
-                filePath
-            )
+            /\.wav$/i.test(filePath)
         ) {
             return "audio/wav";
         }
 
-
         if (
-            /\.ogg$/i.test(
-                filePath
-            )
+            /\.ogg$/i.test(filePath)
         ) {
             return "audio/ogg";
         }
 
-
         if (
-            /\.m4a$/i.test(
-                filePath
-            )
+            /\.m4a$/i.test(filePath)
         ) {
             return "audio/mp4";
         }
 
-
         return "audio/mpeg";
     }
 
-
     if (
-        /\.pdf$/i.test(
-            filePath
-        )
+        /\.pdf$/i.test(filePath)
     ) {
         return "application/pdf";
     }
 
-
     if (
-        /\.txt$/i.test(
-            filePath
-        )
+        /\.txt$/i.test(filePath)
     ) {
         return "text/plain";
     }
 
-
     if (
-        /\.json$/i.test(
-            filePath
-        )
+        /\.json$/i.test(filePath)
     ) {
         return "application/json";
     }
 
-
     if (
-        /\.csv$/i.test(
-            filePath
-        )
+        /\.csv$/i.test(filePath)
     ) {
         return "text/csv";
     }
-
 
     return "application/octet-stream";
 }
@@ -1025,54 +749,35 @@ function getMimeType(
    DOWNLOAD
 ========================================================= */
 
-async function downloadAttachment(
-    attachment
+async function downloadURL(
+    url
 ) {
-
-    if (
-        !attachment?.url
-    ) {
-
-        throw new Error(
-            "رابط المرفق غير موجود."
-        );
-    }
-
-
     await fs.ensureDir(
         CACHE_DIR
     );
 
-
     const extension =
-        getExtension(
-            attachment
-        );
-
+        path.extname(
+            new URL(url).pathname
+        ) || ".bin";
 
     const filePath =
         path.join(
-
             CACHE_DIR,
-
-            `mira_${Date.now()}_${Math.random()
+            `mira_url_${Date.now()}_${Math.random()
                 .toString(36)
                 .slice(2, 8)}${extension}`
-
         );
-
 
     const response =
         await axios.get(
-
-            attachment.url,
-
+            url,
             {
                 responseType:
                     "arraybuffer",
 
                 timeout:
-                    30000,
+                    60000,
 
                 maxContentLength:
                     MAX_FILE_SIZE,
@@ -1085,37 +790,116 @@ async function downloadAttachment(
                         "Mozilla/5.0"
                 }
             }
-
         );
-
 
     if (
         !response.data ||
         !response.data.length
     ) {
-
         throw new Error(
-            "المرفق فارغ."
+            "الرابط لم يرجع محتوى."
         );
     }
-
 
     if (
         response.data.length >
         MAX_FILE_SIZE
     ) {
-
         throw new Error(
-            "حجم المرفق أكبر من الحد المسموح."
+            "حجم الفيديو/الملف أكبر من الحد المسموح."
         );
     }
-
 
     await fs.writeFile(
         filePath,
         response.data
     );
 
+    return {
+        filePath,
+        contentType:
+            response.headers[
+                "content-type"
+            ] || ""
+    };
+}
+
+
+/* =========================================================
+   DOWNLOAD ATTACHMENT
+========================================================= */
+
+async function downloadAttachment(
+    attachment
+) {
+    if (!attachment?.url) {
+        throw new Error(
+            "رابط المرفق غير موجود."
+        );
+    }
+
+    await fs.ensureDir(
+        CACHE_DIR
+    );
+
+    const extension =
+        getExtension(
+            attachment
+        );
+
+    const filePath =
+        path.join(
+            CACHE_DIR,
+            `mira_${Date.now()}_${Math.random()
+                .toString(36)
+                .slice(2, 8)}${extension}`
+        );
+
+    const response =
+        await axios.get(
+            attachment.url,
+            {
+                responseType:
+                    "arraybuffer",
+
+                timeout:
+                    60000,
+
+                maxContentLength:
+                    MAX_FILE_SIZE,
+
+                maxBodyLength:
+                    MAX_FILE_SIZE,
+
+                headers: {
+                    "User-Agent":
+                        "Mozilla/5.0"
+                }
+            }
+        );
+
+    if (
+        !response.data ||
+        !response.data.length
+    ) {
+        throw new Error(
+            "المرفق فارغ."
+        );
+    }
+
+    if (
+        response.data.length >
+        MAX_FILE_SIZE
+    ) {
+        throw new Error(
+            "حجم المرفق أكبر من الحد المسموح."
+        );
+    }
+
+    await fs.writeFile(
+        filePath,
+        response.data
+    );
 
     return filePath;
 }
@@ -1128,24 +912,19 @@ async function downloadAttachment(
 async function cleanupFiles(
     files
 ) {
-
     for (
         const file of files
     ) {
-
         try {
-
             if (
                 await fs.pathExists(
                     file
                 )
             ) {
-
                 await fs.remove(
                     file
                 );
             }
-
         } catch (_) {}
     }
 }
@@ -1158,25 +937,20 @@ async function cleanupFiles(
 function extractGeminiText(
     response
 ) {
-
     try {
-
         if (
             response?.text
         ) {
-
             return String(
                 response.text
             ).trim();
         }
-
 
         if (
             response
                 ?.candidates?.[0]
                 ?.content?.parts
         ) {
-
             return response
                 .candidates[0]
                 .content
@@ -1193,49 +967,36 @@ function extractGeminiText(
                 .join("\n")
                 .trim();
         }
-
     } catch (_) {}
-
 
     return "";
 }
 
 
 /* =========================================================
-   TEXT ANALYSIS
+   TEXT / URL ANALYSIS
 ========================================================= */
 
 async function analyzeText(
     prompt
 ) {
-
     const urls =
         extractURLs(
             prompt
         );
-
 
     const result =
         await generateWithFallback(
             (model) => {
 
                 const config = {
-
                     systemInstruction:
                         MIRA_SYSTEM
-
                 };
-
-
-                /*
-                 * تفعيل URL Context
-                 * عندما يحتوي الطلب على رابط.
-                 */
 
                 if (
                     urls.length
                 ) {
-
                     config.tools = [
                         {
                             urlContext: {}
@@ -1243,70 +1004,202 @@ async function analyzeText(
                     ];
                 }
 
-
                 return {
-
                     model,
-
-                    contents:
-                        prompt,
-
+                    contents: prompt,
                     config
-
                 };
             }
         );
 
-
     return {
-
         text:
             extractGeminiText(
                 result.response
             ),
-
         model:
             result.model
-
     };
 }
 
 
 /* =========================================================
-   FILE ANALYSIS
+   UPLOAD FILE TO GEMINI
 ========================================================= */
 
-async function analyzeFiles(
+async function uploadToGemini(
+    filePath,
+    mimeType
+) {
+    const ai =
+        createAI();
+
+    const uploaded =
+        await ai.files.upload({
+            file: filePath,
+            config: {
+                mimeType
+            }
+        });
+
+    if (
+        !uploaded?.uri
+    ) {
+        throw new Error(
+            "فشل رفع الملف إلى Gemini."
+        );
+    }
+
+    /*
+     * Gemini يحتاج أن يصبح الفيديو ACTIVE
+     * قبل استخدامه.
+     */
+
+    let current =
+        uploaded;
+
+    for (
+        let i = 0;
+        i < 60;
+        i++
+    ) {
+        const state =
+            String(
+                current?.state?.name ||
+                current?.state ||
+                "ACTIVE"
+            ).toUpperCase();
+
+        if (
+            state === "ACTIVE"
+        ) {
+            return current;
+        }
+
+        if (
+            state === "FAILED"
+        ) {
+            throw new Error(
+                "فشل Gemini في معالجة الفيديو."
+            );
+        }
+
+        await sleep(3000);
+
+        if (
+            current?.name &&
+            typeof ai.files.get ===
+                "function"
+        ) {
+            current =
+                await ai.files.get({
+                    name:
+                        current.name
+                });
+        } else {
+            /*
+             * إذا كانت نسخة SDK لا توفر
+             * files.get بالشكل المتوقع،
+             * نخرج من الانتظار.
+             */
+
+            break;
+        }
+    }
+
+    return current;
+}
+
+
+/* =========================================================
+   VIDEO ANALYSIS
+========================================================= */
+
+async function analyzeVideoFile(
+    filePath,
+    mimeType,
+    prompt
+) {
+    const uploaded =
+        await uploadToGemini(
+            filePath,
+            mimeType
+        );
+
+    if (
+        !uploaded?.uri
+    ) {
+        throw new Error(
+            "تعذر تجهيز الفيديو للتحليل."
+        );
+    }
+
+    const result =
+        await generateWithFallback(
+            (model) => ({
+                model,
+
+                contents: [
+                    {
+                        role: "user",
+                        parts: [
+                            {
+                                text:
+                                    prompt ||
+                                    "حلل الفيديو بالتفصيل، واشرح أهم الأحداث والمعلومات، واذكر الطوابع الزمنية المهمة."
+                            },
+                            {
+                                fileData: {
+                                    fileUri:
+                                        uploaded.uri,
+                                    mimeType:
+                                        uploaded.mimeType ||
+                                        mimeType
+                                }
+                            }
+                        ]
+                    }
+                ],
+
+                config: {
+                    systemInstruction:
+                        MIRA_SYSTEM
+                }
+            })
+        );
+
+    return {
+        text:
+            extractGeminiText(
+                result.response
+            ),
+        model:
+            result.model
+    };
+}
+
+
+/* =========================================================
+   ATTACHMENT ANALYSIS
+========================================================= */
+
+async function analyzeAttachments(
     prompt,
     attachments
 ) {
-
     const downloaded = [];
 
-
     try {
-
-        const parts = [
-
-            {
-                text:
-                    prompt ||
-                    "حلل المحتوى المرفق واستخرج أهم المعلومات."
-            }
-
-        ];
-
+        const textParts = [];
 
         for (
-            const attachment of
-            attachments
+            const attachment
+            of attachments
         ) {
-
             const kind =
                 getAttachmentType(
                     attachment
                 );
-
 
             if (
                 kind === "unknown"
@@ -1314,41 +1207,14 @@ async function analyzeFiles(
                 continue;
             }
 
-
-            /*
-             * الفيديو والصوت غير مفعّلين
-             * في مسار هذه النسخة.
-             */
-
-            if (
-                kind === "video" ||
-                kind === "audio"
-            ) {
-
-                parts.push({
-
-                    text:
-                        `يوجد مرفق من نوع ${kind}. ` +
-                        `هذا النوع غير مفعّل للتحليل المباشر ` +
-                        `في مسار ميرا الحالي.`
-
-                });
-
-
-                continue;
-            }
-
-
             const filePath =
                 await downloadAttachment(
                     attachment
                 );
 
-
             downloaded.push(
                 filePath
             );
-
 
             const mimeType =
                 getMimeType(
@@ -1357,6 +1223,91 @@ async function analyzeFiles(
                     kind
                 );
 
+            /*
+             * VIDEO
+             */
+
+            if (
+                kind === "video"
+            ) {
+                return await analyzeVideoFile(
+                    filePath,
+                    mimeType,
+                    prompt
+                );
+            }
+
+            /*
+             * AUDIO
+             */
+
+            if (
+                kind === "audio"
+            ) {
+                const ai =
+                    createAI();
+
+                const uploaded =
+                    await ai.files.upload({
+                        file:
+                            filePath,
+                        config: {
+                            mimeType
+                        }
+                    });
+
+                if (
+                    !uploaded?.uri
+                ) {
+                    throw new Error(
+                        "تعذر تجهيز الصوت للتحليل."
+                    );
+                }
+
+                const result =
+                    await generateWithFallback(
+                        (model) => ({
+                            model,
+
+                            contents: [
+                                {
+                                    role:
+                                        "user",
+                                    parts: [
+                                        {
+                                            text:
+                                                prompt ||
+                                                "حلل هذا الملف الصوتي واستخرج أهم المعلومات."
+                                        },
+                                        {
+                                            fileData: {
+                                                fileUri:
+                                                    uploaded.uri,
+                                                mimeType:
+                                                    uploaded.mimeType ||
+                                                    mimeType
+                                            }
+                                        }
+                                    ]
+                                }
+                            ],
+
+                            config: {
+                                systemInstruction:
+                                    MIRA_SYSTEM
+                            }
+                        })
+                    );
+
+                return {
+                    text:
+                        extractGeminiText(
+                            result.response
+                        ),
+                    model:
+                        result.model
+                };
+            }
 
             /*
              * IMAGE
@@ -1365,146 +1316,141 @@ async function analyzeFiles(
             if (
                 kind === "image"
             ) {
-
                 const buffer =
                     await fs.readFile(
                         filePath
                     );
 
+                const result =
+                    await generateWithFallback(
+                        (model) => ({
+                            model,
 
-                parts.push({
+                            contents: [
+                                {
+                                    role:
+                                        "user",
+                                    parts: [
+                                        {
+                                            text:
+                                                prompt ||
+                                                "حلل الصورة بالتفصيل."
+                                        },
+                                        {
+                                            inlineData: {
+                                                mimeType,
+                                                data:
+                                                    buffer.toString(
+                                                        "base64"
+                                                    )
+                                            }
+                                        }
+                                    ]
+                                }
+                            ],
 
-                    inlineData: {
+                            config: {
+                                systemInstruction:
+                                    MIRA_SYSTEM
+                            }
+                        })
+                    );
 
-                        mimeType,
-
-                        data:
-                            buffer.toString(
-                                "base64"
-                            )
-
-                    }
-
-                });
-
-
-                continue;
+                return {
+                    text:
+                        extractGeminiText(
+                            result.response
+                        ),
+                    model:
+                        result.model
+                };
             }
 
-
             /*
-             * FILE
+             * DOCUMENT / FILE
              */
 
             const ai =
                 createAI();
 
-
-            const uploadedFile =
+            const uploaded =
                 await ai.files.upload({
-
                     file:
                         filePath,
-
                     config: {
-
                         mimeType
-
                     }
-
                 });
 
-
             if (
-                !uploadedFile?.uri
+                !uploaded?.uri
             ) {
-
                 throw new Error(
                     "فشل رفع الملف إلى Gemini."
                 );
             }
 
-
-            parts.push({
-
-                fileData: {
-
-                    fileUri:
-                        uploadedFile.uri,
-
-                    mimeType:
-                        uploadedFile.mimeType ||
-                        mimeType
-
-                }
-
+            textParts.push({
+                fileUri:
+                    uploaded.uri,
+                mimeType:
+                    uploaded.mimeType ||
+                    mimeType
             });
         }
 
-
         if (
-            parts.length === 1
+            !textParts.length
         ) {
-
             throw new Error(
                 "لم أتمكن من تجهيز المرفق للتحليل."
             );
         }
 
-
-        /*
-         * استخدام fallback للنماذج
-         */
-
         const result =
             await generateWithFallback(
-                (model) => {
+                (model) => ({
+                    model,
 
-                    return {
+                    contents: [
+                        {
+                            role:
+                                "user",
 
-                        model,
+                            parts: [
+                                {
+                                    text:
+                                        prompt ||
+                                        "حلل الملف واستخرج أهم المعلومات."
+                                },
 
-                        contents: [
-
-                            {
-
-                                role:
-                                    "user",
-
-                                parts
-
-                            }
-
-                        ],
-
-                        config: {
-
-                            systemInstruction:
-                                MIRA_SYSTEM
-
+                                ...textParts.map(
+                                    file => ({
+                                        fileData:
+                                            file
+                                    })
+                                )
+                            ]
                         }
+                    ],
 
-                    };
-
-                }
+                    config: {
+                        systemInstruction:
+                            MIRA_SYSTEM
+                    }
+                })
             );
 
-
         return {
-
             text:
                 extractGeminiText(
                     result.response
                 ),
-
             model:
                 result.model
-
         };
 
-
     } finally {
-
         await cleanupFiles(
             downloaded
         );
@@ -1513,41 +1459,101 @@ async function analyzeFiles(
 
 
 /* =========================================================
-   CLEAN RESPONSE
+   DIRECT VIDEO URL
 ========================================================= */
 
-function cleanResponse(
-    text
+function looksLikeDirectVideoURL(
+    url
 ) {
-
-    let result =
-        String(
-            text || ""
-        ).trim();
+    return /\.(mp4|mpeg|mov|avi|webm|wmv|flv|3gp)(\?|$)/i
+        .test(url);
+}
 
 
-    if (!result) {
+async function analyzeDirectVideoURL(
+    url,
+    prompt
+) {
+    let downloaded;
 
-        return (
-            "ما قدرت أطلع نتيجة " +
-            "من المحتوى المرسل."
+    try {
+        downloaded =
+            await downloadURL(
+                url
+            );
+
+        const contentType =
+            String(
+                downloaded.contentType
+            ).toLowerCase();
+
+        let mimeType =
+            contentType.split(";")[0];
+
+        if (
+            !mimeType.startsWith(
+                "video/"
+            )
+        ) {
+            mimeType =
+                getMimeType(
+                    downloaded.filePath,
+                    {},
+                    "video"
+                );
+        }
+
+        return await analyzeVideoFile(
+            downloaded.filePath,
+            mimeType,
+            prompt
+        );
+
+    } finally {
+        if (
+            downloaded?.filePath
+        ) {
+            await cleanupFiles([
+                downloaded.filePath
+            ]);
+        }
+    }
+}
+
+
+/* =========================================================
+   URL ANALYSIS
+========================================================= */
+
+async function analyzeURL(
+    url,
+    prompt
+) {
+    /*
+     * إذا كان الرابط يبدو فيديو مباشرًا،
+     * نستخدم مسار الفيديو.
+     */
+
+    if (
+        looksLikeDirectVideoURL(
+            url
+        )
+    ) {
+        return await analyzeDirectVideoURL(
+            url,
+            prompt
         );
     }
 
+    /*
+     * غير ذلك:
+     * URL Context
+     */
 
-    if (
-        result.length >
-        7000
-    ) {
-
-        result =
-            result.slice(
-                0,
-                7000
-            ) +
-            "\n\n[تم اختصار الرد]";
-    }
-
+    const result =
+        await analyzeText(
+            `${prompt}\n\nالرابط:\n${url}`
+        );
 
     return result;
 }
@@ -1558,26 +1564,18 @@ function cleanResponse(
 ========================================================= */
 
 async function analyze({
-
     query,
-
     attachments,
-
     threadID,
-
     senderID
-
 }) {
-
     if (
         !GEMINI_API_KEY
     ) {
-
         throw new Error(
             "GEMINI_API_KEY غير موجود."
         );
     }
-
 
     const history =
         buildHistory(
@@ -1585,16 +1583,13 @@ async function analyze({
             senderID
         );
 
-
     let prompt =
         query ||
         "حلل المحتوى المرفق.";
 
-
     if (
         history
     ) {
-
         prompt =
 `السياق السابق للمحادثة:
 ${history}
@@ -1605,9 +1600,8 @@ ${prompt}
 استخدمي السياق السابق فقط عندما يكون مرتبطًا بالطلب الحالي.`;
     }
 
-
     /*
-     * يوجد مرفق
+     * مرفقات Messenger
      */
 
     if (
@@ -1616,27 +1610,53 @@ ${prompt}
         ) &&
         attachments.length
     ) {
-
         const result =
-            await analyzeFiles(
+            await analyzeAttachments(
                 prompt,
                 attachments
             );
 
-
         console.log(
             `[MIRA] تم التحليل بواسطة: ${result.model}`
         );
-
 
         return cleanResponse(
             result.text
         );
     }
 
+    /*
+     * روابط داخل الرسالة
+     */
+
+    const urls =
+        extractURLs(
+            prompt
+        );
+
+    if (
+        urls.length
+    ) {
+        const firstURL =
+            urls[0];
+
+        const result =
+            await analyzeURL(
+                firstURL,
+                prompt
+            );
+
+        console.log(
+            `[MIRA] تم التحليل بواسطة: ${result.model}`
+        );
+
+        return cleanResponse(
+            result.text
+        );
+    }
 
     /*
-     * نص / رابط
+     * نص عادي
      */
 
     const result =
@@ -1644,11 +1664,9 @@ ${prompt}
             prompt
         );
 
-
     console.log(
         `[MIRA] تم التحليل بواسطة: ${result.model}`
     );
-
 
     return cleanResponse(
         result.text
@@ -1657,34 +1675,58 @@ ${prompt}
 
 
 /* =========================================================
+   CLEAN RESPONSE
+========================================================= */
+
+function cleanResponse(
+    text
+) {
+    let result =
+        String(
+            text || ""
+        ).trim();
+
+    if (!result) {
+        return (
+            "ما قدرت أطلع نتيجة " +
+            "من المحتوى المرسل."
+        );
+    }
+
+    if (
+        result.length >
+        7000
+    ) {
+        result =
+            result.slice(
+                0,
+                7000
+            ) +
+            "\n\n[تم اختصار الرد]";
+    }
+
+    return result;
+}
+
+
+/* =========================================================
    PROCESS REQUEST
 ========================================================= */
 
 async function processRequest({
-
     api,
-
     event,
-
     query,
-
     attachments
-
 }) {
-
     const {
-
         threadID,
-
         senderID,
-
         messageID
-
     } = event;
 
-
     /*
-     * 🧠 ميرا تعمل
+     * 🧠 في بداية كل عملية
      */
 
     await reaction(
@@ -1693,139 +1735,77 @@ async function processRequest({
         "🧠"
     );
 
-
     await typing(
         api,
         threadID,
         true
     );
 
-
     try {
-
         const answer =
             await analyze({
-
                 query,
-
                 attachments,
-
                 threadID,
-
                 senderID
-
             });
 
-
-        /*
-         * حفظ المستخدم
-         */
-
         addHistory(
-
             threadID,
-
             senderID,
-
             "user",
-
-            query ||
-            "[مرفق]"
-
+            query || "[مرفق]"
         );
-
-
-        /*
-         * حفظ رد ميرا
-         */
 
         addHistory(
-
             threadID,
-
             senderID,
-
             "assistant",
-
             answer
-
         );
 
-
         /*
-         * ✅ نجاح
+         * نجاح
          */
 
         await reaction(
-
             api,
-
             messageID,
-
             "✅"
-
         );
-
 
         return answer;
 
-
     } catch (error) {
-
         console.error(
             "[MIRA ERROR]",
             error
         );
 
-
-        /*
-         * ❌ فشل
-         */
-
         await reaction(
-
             api,
-
             messageID,
-
             "❌"
-
         );
-
-
-        const errorText =
-            getErrorText(
-                error
-            );
-
-
-        /*
-         * رسالة مفهومة للمستخدم
-         */
 
         if (
             isTemporaryModelError(
                 error
             )
         ) {
-
             return (
                 "ميرا ما قدرت تنفذ التحليل حاليًا.\n\n" +
-                "جميع نماذج Gemini الاحتياطية غير متاحة مؤقتًا.\n" +
+                "نماذج Gemini الاحتياطية غير متاحة مؤقتًا.\n" +
                 "جرّب مرة ثانية بعد قليل."
             );
         }
 
-
         return (
             "ما قدرت أحلل المحتوى حاليًا.\n\n" +
-            `السبب: ${errorText}`
+            `السبب: ${getErrorText(error)}`
         );
-    }
 
-
-    finally {
-
+    } finally {
         await typing(
             api,
             threadID,
@@ -1845,19 +1825,10 @@ async function ({
     event,
     args
 }) {
-
     const query =
         Array.isArray(args)
-            ? args
-                .join(" ")
-                .trim()
+            ? args.join(" ").trim()
             : "";
-
-
-    /*
-     * المرفقات الموجودة
-     * في الرسالة الحالية
-     */
 
     const currentAttachments =
         Array.isArray(
@@ -1866,57 +1837,35 @@ async function ({
             ? event.attachments
             : [];
 
-
-    /*
-     * المرفقات الموجودة
-     * في الرسالة التي يتم الرد عليها
-     */
-
     const replyAttachments =
         Array.isArray(
-            event.messageReply
-                ?.attachments
+            event.messageReply?.attachments
         )
-            ? event.messageReply
-                .attachments
+            ? event.messageReply.attachments
             : [];
 
-
-    /*
-     * دمج المرفقات
-     */
-
     const attachments = [
-
         ...currentAttachments,
-
         ...replyAttachments
-
     ];
-
-
-    /*
-     * لا يوجد طلب
-     */
 
     if (
         !query &&
         !attachments.length
     ) {
-
         return send(
-
             api,
 
-`╭──〔 ميرا 〕──╮
+`╭──〔 ميرا V1.4 〕──╮
 │
-│ أنا جاهزة لتحليل:
+│ 🧠 ميرا جاهزة
 │
 │ ⎔ النصوص
 │ ⎔ الصور
+│ ⎔ الفيديو
+│ ⎔ الصوت
 │ ⎔ الروابط
 │ ⎔ الملفات
-│ ⎔ البيانات
 │
 │ مثال:
 │ ميرا حللي الصورة دي
@@ -1924,90 +1873,48 @@ async function ({
 │ أو:
 │ ميرا حللي الرابط دا
 │
-╰────────────────`,
+╰──────────────────`,
 
             event.threadID,
-
             event.messageID
-
         );
     }
-
-
-    /*
-     * تشغيل التحليل
-     */
 
     const answer =
         await processRequest({
-
             api,
-
             event,
-
             query,
-
             attachments
-
         });
-
-
-    /*
-     * إرسال النتيجة
-     */
 
     const info =
         await send(
-
             api,
-
             answer,
-
             event.threadID,
-
             event.messageID
-
         );
 
-
-    /*
-     * تسجيل الرسالة
-     * لنظام handleReply
-     */
-
     if (
-
         info?.messageID &&
-
         Array.isArray(
             global.client?.handleReply
         )
-
     ) {
-
         global.client.handleReply.push({
-
-            name:
-                "ميرا",
-
+            name: "ميرا",
             messageID:
                 info.messageID,
-
             author:
                 event.senderID,
-
             threadID:
                 event.threadID,
-
-            type:
-                "mira",
-
+            type: "mira",
             createdAt:
                 Date.now()
-
         });
     }
-
 
     return info;
 };
@@ -2023,48 +1930,25 @@ async function ({
     event,
     handleReply
 }) {
-
-    if (
-        !handleReply
-    ) {
+    if (!handleReply) {
         return;
     }
 
-
-    /*
-     * نفس المجموعة
-     */
-
     if (
-
         String(
             handleReply.threadID
         ) !==
-
         String(
             event.threadID
         )
-
     ) {
-
         return;
     }
 
-
-    /*
-     * النص
-     */
-
     const query =
         String(
-            event.body ||
-            ""
+            event.body || ""
         ).trim();
-
-
-    /*
-     * المرفقات الجديدة
-     */
 
     const attachments =
         Array.isArray(
@@ -2073,120 +1957,61 @@ async function ({
             ? event.attachments
             : [];
 
-
-    /*
-     * مرفقات الرسالة التي نرد عليها
-     */
-
     const replyAttachments =
         Array.isArray(
-            event.messageReply
-                ?.attachments
+            event.messageReply?.attachments
         )
-            ? event.messageReply
-                .attachments
+            ? event.messageReply.attachments
             : [];
 
-
-    /*
-     * دمج
-     */
-
     const allAttachments = [
-
         ...attachments,
-
         ...replyAttachments
-
     ];
 
-
     if (
-
         !query &&
-
         !allAttachments.length
-
     ) {
-
         return;
     }
 
-
-    /*
-     * تشغيل ميرا
-     */
-
     const answer =
         await processRequest({
-
             api,
-
             event,
-
             query,
-
             attachments:
                 allAttachments
-
         });
-
-
-    /*
-     * إرسال الرد
-     */
 
     const info =
         await send(
-
             api,
-
             answer,
-
             event.threadID,
-
             event.messageID
-
         );
 
-
-    /*
-     * استمرار handleReply
-     */
-
     if (
-
         info?.messageID &&
-
         Array.isArray(
             global.client?.handleReply
         )
-
     ) {
-
         global.client.handleReply.push({
-
-            name:
-                "ميرا",
-
+            name: "ميرا",
             messageID:
                 info.messageID,
-
             author:
                 event.senderID,
-
             threadID:
                 event.threadID,
-
-            type:
-                "mira",
-
+            type: "mira",
             createdAt:
                 Date.now()
-
         });
     }
-
 
     return info;
 };
