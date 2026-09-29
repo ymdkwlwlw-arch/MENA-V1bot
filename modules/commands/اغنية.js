@@ -35,11 +35,12 @@ module.exports.run = async function ({ api, event, args }) {
 
     if (!input) {
         return api.sendMessage(
-            "╭─❖ [ نظام الأغاني ] ❖─╮\n\n" +
-            "⚠️ اكتب اسم الأغنية أو أرسل رابط YouTube.\n\n" +
-            "📝 مثال:\n" +
-            "╰─◗ /اغنية stay\n\n" +
-            "╰───────────────╯",
+            "╭─  ── ── ── ──  ─╮\n" +
+            "     نـظـام الأغـانـي\n" +
+            "╰─  ── ── ── ──  ─╯\n" +
+            "⎔ اكتب اسم الأغنية أو أرسل رابط YouTube.\n" +
+            "⊞ مثال: اغنية stay\n" +
+            "── ── ── ── ── ── ──",
             threadID,
             messageID
         );
@@ -49,10 +50,12 @@ module.exports.run = async function ({ api, event, args }) {
 
     if (!apiBase) {
         return api.sendMessage(
-            "╭─❖ [ نظام الأغاني ] ❖─╮\n\n" +
-            "❌ تعذر الاتصال بخدمة الأغاني حاليًا.\n" +
-            "جرّب مرة أخرى بعد قليل.\n\n" +
-            "╰───────────────╯",
+            "╭─  ── ── ── ──  ─╮\n" +
+            "     نـظـام الأغـانـي\n" +
+            "╰─  ── ── ── ──  ─╯\n" +
+            "⎔ الـحـالـة: تـعـذر الاتـصـال بـخـدمـة الأغـانـي.\n" +
+            "⊞ حـاول مـرة أخـرى بـعـد قـلـيـل.\n" +
+            "── ── ── ── ── ── ──",
             threadID,
             messageID
         );
@@ -116,9 +119,12 @@ module.exports.run = async function ({ api, event, args }) {
         } catch (e) {}
 
         return api.sendMessage(
-            "╭─❖ [ نظام الأغاني ] ❖─╮\n\n" +
-            "⭕ لم يتم العثور على نتائج مطابقة.\n\n" +
-            "╰───────────────╯",
+            "╭─  ── ── ── ──  ─╮\n" +
+            "     نـظـام الأغـانـي\n" +
+            "╰─  ── ── ── ──  ─╯\n" +
+            "⎔ الـحـالـة: لـم يـتـم الـعـثـور عـلـى نـتـائـج.\n" +
+            "⊞ حـاول بـكـلـمـات بـحـث مـخـتـلـفـة.\n" +
+            "── ── ── ── ── ── ──",
             threadID,
             messageID
         );
@@ -130,17 +136,19 @@ module.exports.run = async function ({ api, event, args }) {
         const item = results[i];
 
         songList +=
-            `│ ${i + 1}. 🎵 ${item.title || "بدون عنوان"}\n` +
-            `│ ⏱️ المدة: ${item.time || "غير معروفة"}\n` +
-            "├───────────────\n";
+            `⎔ ${i + 1}. ${item.title || "بدون عنوان"}\n` +
+            `⊞ المدة: ${item.time || "غير معروفة"}\n` +
+            "── ── ── ── ──\n";
     }
 
     const menu =
-        "╭─❖ [ نتائج البحث ] ❖─╮\n\n" +
+        "╭─  ── ── ── ──  ─╮\n" +
+        "     نـتـائـج بـحـث الأغـانـي\n" +
+        "╰─  ── ── ── ──  ─╯\n" +
         songList +
         "\n" +
-        "📌 رد على هذه الرسالة برقم الأغنية لتحميلها.\n\n" +
-        "╰───────────────╯";
+        "⎔ رد على هذه الرسالة برقم الأغنية لتحميلها.\n" +
+        "── ── ── ── ── ── ──";
 
     return api.sendMessage(
         menu,
@@ -164,7 +172,6 @@ module.exports.run = async function ({ api, event, args }) {
         },
         messageID
     );
-
 };
 
 module.exports.handleReply = async function ({
@@ -172,7 +179,6 @@ module.exports.handleReply = async function ({
     api,
     handleReply
 }) {
-
     const {
         results,
         author,
@@ -200,7 +206,7 @@ module.exports.handleReply = async function ({
         choice > results.length
     ) {
         return api.sendMessage(
-            "❎ اختر رقمًا صحيحًا من القائمة.",
+            "اختر رقمًا صحيحًا من القائمة.",
             threadID,
             event.messageID
         );
@@ -215,7 +221,7 @@ module.exports.handleReply = async function ({
 
     if (!videoID) {
         return api.sendMessage(
-            "❌ لم أستطع الحصول على معرف المقطع.",
+            "تعذر الحصول على معرف المقطع.",
             threadID,
             event.messageID
         );
@@ -252,9 +258,7 @@ async function handleDownload(
     videoID,
     apiBase
 ) {
-
     try {
-
         console.log(
             `[SONG] Downloading: ${videoID}`
         );
@@ -292,17 +296,13 @@ async function handleDownload(
                 maxContentLength: Infinity,
                 maxBodyLength: Infinity,
                 headers: {
-                    "User-Agent":
-                        "Mozilla/5.0"
+                    "User-Agent": "Mozilla/5.0"
                 }
             }
         );
 
         const cacheDir =
-            path.join(
-                __dirname,
-                "cache"
-            );
+            path.join(__dirname, "cache");
 
         await fs.ensureDir(cacheDir);
 
@@ -355,14 +355,15 @@ async function handleDownload(
         return api.sendMessage(
             {
                 body:
-                    "╭─❖ [ نجاح التحميل ] ❖─╮\n\n" +
-                    `🎵 الأغنية: ${title}\n\n` +
-                    "╰───────────────╯",
+                    "╭─  ── ── ── ──  ─╮\n" +
+                    "     نـجـاح تـحـمـيـل الأغـنـيـة\n" +
+                    "╰─  ── ── ── ──  ─╯\n" +
+                    `⎔ الأغـنـيـة: ${title}\n` +
+                    "⊞ الـحـالـة: تـم الـتـحـمـيـل بـنـجـاح\n" +
+                    "── ── ── ── ── ── ──",
 
                 attachment:
-                    fs.createReadStream(
-                        filePath
-                    )
+                    fs.createReadStream(filePath)
             },
 
             threadID,
@@ -390,7 +391,6 @@ async function handleDownload(
         );
 
     } catch (error) {
-
         console.log(
             "[SONG] Download failed:",
             error.message
@@ -405,12 +405,14 @@ async function handleDownload(
         } catch (e) {}
 
         return api.sendMessage(
-            "╭─❖ [ نظام الأغاني ] ❖─╮\n\n" +
-            "❌ فشل تحميل الملف الصوتي.\n\n" +
-            "قد تكون الخدمة مشغولة أو أن الرابط لم يعد متاحًا.\n\n" +
-            "╰───────────────╯",
+            "╭─  ── ── ── ──  ─╮\n" +
+            "     نـظـام الأغـانـي\n" +
+            "╰─  ── ── ── ──  ─╯\n" +
+            "⎔ الـحـالـة: فـشـل تـحـمـيـل الـمـلـف الـصـوتـي.\n" +
+            "⊞ قـد تـكـون الـخـدمـة مـشـغـولـة أو الـرابـط غـيـر مـتـاح.\n" +
+            "── ── ── ── ── ── ──",
             threadID,
             messageID
         );
     }
-}
+                                  }
