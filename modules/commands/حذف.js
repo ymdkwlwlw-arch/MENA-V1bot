@@ -1,44 +1,30 @@
 module.exports.config = {
-    name: "حذف",
-    aliases: ["delete", "مسح"],
-    version: "2.0.0",
-    hasPermssion: 0,
-    credits: "KIROS",
-    description: "حذف رسالة البوت عند الرد عليها",
-    usePrefix: true,
-    commandCategory: "utilities",
-    usages: "حذف",
-    cooldowns: 1
+	name: "حذف",
+	version: "1.0.1",
+	hasPermssion: 0,
+	credits: "Mirai Team",
+	description: "حذف رسائل البوت",
+	usePrefix: true,
+	commandCategory: "رسائل",
+	usages: "حذف",
+	cooldowns: 0
 };
 
-module.exports.run = async function ({ api, event }) {
-    const { messageReply, threadID, messageID } = event;
+module.exports.run = function({ api, event, getText }) {
+	if (!event.messageReply) {
+		return;
+	}
 
-    // لازم يكون في رد
-    if (!messageReply) {
-        return;
-    }
+	if (event.messageReply.senderID != api.getCurrentUserID()) {
+		return;
+	}
 
-    const botID = String(api.getCurrentUserID());
-    const repliedSenderID = String(messageReply.senderID || "");
-
-    // الرسالة ليست من البوت
-    if (repliedSenderID !== botID) {
-        return api.sendMessage(
-            "دي م رسالتي 🦧",
-            threadID,
-            messageID
-        );
-    }
-
-    // حذف رسالة البوت
-    try {
-        return await api.unsendMessage(messageReply.messageID);
-    } catch (error) {
-        console.error("[حذف] Error:", error);
-    }
+	return api.unsendMessage(event.messageReply.messageID);
 };
 
 module.exports.languages = {
-    ar: {}
+	"ar": {
+		"returnCant": "لا يمكن حذف رسائل الآخرين.",
+		"missingReply": "يجب الرد على رسالة أولاً."
+	}
 };
