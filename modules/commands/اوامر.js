@@ -4,7 +4,7 @@ const path = require("path");
 
 module.exports.config = {
     name: "اوامر",
-    version: "2.4.0",
+    version: "2.4.1",
     hasPermssion: 0,
     credits: "محمد إدريس",
     description: "عرض جميع أوامر البوت",
@@ -61,10 +61,6 @@ module.exports.run = async function ({
 
     /*
      * قراءة صلاحية الأمر
-     *
-     * يدعم:
-     * hasPermssion
-     * hasPermission
      */
 
     const getPermission = command => {
@@ -159,8 +155,6 @@ module.exports.run = async function ({
 
     /*
      * الأوامر العامة
-     *
-     * صلاحية 0 و 1
      */
 
     const generalCommands = allCommands
@@ -174,8 +168,6 @@ module.exports.run = async function ({
 
     /*
      * أوامر المطور
-     *
-     * صلاحية 2 أو أعلى
      */
 
     const developerCommands = allCommands
@@ -189,8 +181,6 @@ module.exports.run = async function ({
 
     /*
      * تنسيق الأوامر
-     *
-     * كل 3 أوامر في سطر
      */
 
     const formatCommands = list => {
@@ -286,14 +276,14 @@ ${formatCommands(developerCommands)}
 اللهم صلِّ وسلم على سيدنا محمد 🌸`;
 
     /*
-     * رابط صورة القائمة
+     * صورة القائمة
      */
 
     const imageUrl =
         "https://i.imgur.com/j0P8sSf.jpeg";
 
     /*
-     * إنشاء مجلد cache مؤقت
+     * مجلد cache
      */
 
     const cacheDir =
@@ -306,8 +296,9 @@ ${formatCommands(developerCommands)}
         );
 
     try {
+
         /*
-         * إنشاء المجلد إذا لم يكن موجودًا
+         * إنشاء cache إذا لم يكن موجودًا
          */
 
         if (!fs.existsSync(cacheDir)) {
@@ -320,7 +311,7 @@ ${formatCommands(developerCommands)}
         }
 
         /*
-         * تحميل الصورة
+         * تحميل الصورة كـ Buffer
          */
 
         const response =
@@ -328,7 +319,8 @@ ${formatCommands(developerCommands)}
                 imageUrl,
                 {
                     responseType: "arraybuffer",
-                    timeout: 15000
+                    timeout: 15000,
+                    maxContentLength: 15 * 1024 * 1024
                 }
             );
 
@@ -338,22 +330,34 @@ ${formatCommands(developerCommands)}
         );
 
         /*
-         * إرسال القائمة + الصورة
+         * طريقة BotPack الأصلية:
+         * وضع الصورة داخل Array
          */
+
+        const imgP = [];
+
+        imgP.push(
+            fs.createReadStream(tempFile)
+        );
+
+        /*
+         * النص + الصورة في رسالة واحدة
+         */
+
+        const msgg = {
+            body: body,
+            attachment: imgP
+        };
 
         const sentMessage =
             await api.sendMessage(
-                {
-                    body: body,
-                    attachment:
-                        fs.createReadStream(tempFile)
-                },
+                msgg,
                 threadID,
                 messageID
             );
 
         /*
-         * حذف الصورة المؤقتة
+         * حذف الملف المؤقت بعد الإرسال
          */
 
         setTimeout(() => {
@@ -408,27 +412,40 @@ ${formatCommands(developerCommands)}
         return sentMessage;
 
     } catch (error) {
+
         /*
-         * إذا فشل تحميل الصورة،
-         * أرسل القائمة بدون صورة.
+         * تنظيف الملف إذا حدث خطأ
          */
+
+        try {
+            if (fs.existsSync(tempFile)) {
+                fs.unlinkSync(tempFile);
+            }
+        } catch (cleanupError) {
+            console.error(
+                "[اوامر] Cleanup:",
+                cleanupError.message
+            );
+        }
 
         console.error(
             "[اوامر] Image/Send Error:",
             error.message
         );
 
+        /*
+         * إذا فشل تحميل الصورة،
+         * إرسال القائمة بدون صورة
+         */
+
         try {
+
             const sentMessage =
                 await api.sendMessage(
                     body,
                     threadID,
                     messageID
                 );
-
-            /*
-             * الحذف التلقائي
-             */
 
             const configModule =
                 global.configModule?.[this.config.name] || {};
@@ -465,6 +482,7 @@ ${formatCommands(developerCommands)}
             return sentMessage;
 
         } catch (sendError) {
+
             console.error(
                 "[اوامر] Error:",
                 sendError
