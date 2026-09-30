@@ -1,242 +1,110 @@
-const fs = require("fs");
-const path = require("path");
-
 module.exports.config = {
-  name: "لاست",
-  version: "3.0.0",
-  hasPermssion: 0,
-  credits: "محمد إدريس",
-  description: "عرض وإدارة المجموعات التي يتواجد فيها البوت",
-  usePrefix: true,
-  commandCategory: "المطور",
-  usages: "لاست | لاست حظر رقم | لاست خروج رقم",
-  cooldowns: 5
+    name: "لاست",
+    version: "2.5.0",
+    hasPermssion: 2,
+    credits: "Gemini",
+    description: "عرض المجموعات والخروج منها",
+    commandCategory: "المطور",
+    usages: "[الرقم]",
+    cooldowns: 3
 };
 
-const DEV_ID = "61593519041412";
+const DEVELOPER_ID = "61593519041412";
 
-const CACHE_DIR = path.join(__dirname, "cache");
-const BLOCK_FILE = path.join(CACHE_DIR, "blockedGroups.json");
+module.exports.run = async function ({ api, event, Threads }) {
+    if (String(event.senderID) !== DEVELOPER_ID) return;
 
-if (!fs.existsSync(CACHE_DIR)) {
-  fs.mkdirSync(CACHE_DIR, { recursive: true });
-}
+    try {
+        const list = await api.getThreadList(100, null, ["INBOX"]);
 
-if (!fs.existsSync(BLOCK_FILE)) {
-  fs.writeFileSync(BLOCK_FILE, "[]", "utf8");
-}
+        const groupList = list.filter(
+            thread => thread.isGroup && thread.isSubscribed
+        );
 
-function loadBlocked() {
-  try {
-    const data = JSON.parse(
-      fs.readFileSync(BLOCK_FILE, "utf8")
-    );
+        if (!groupList.length) {
+            return api.sendMessage(
+                "╮ ✕ لا توجد مجموعات متاحة.",
+                event.threadID
+            );
+        }
 
-    return Array.isArray(data)
-      ? data.map(String)
-      : [];
-  } catch {
-    return [];
-  }
-}
+        let msg = `╭─── ◸ 𝙻𝙰𝚂𝚃 𝙻𝙸𝚂𝚃 ◿ ───╮\n│\n`;
 
-function saveBlocked(list) {
-  fs.writeFileSync(
-    BLOCK_FILE,
-    JSON.stringify([...new Set(list.map(String))], null, 2),
-    "utf8"
-  );
-}
+        groupList.forEach((group, index) => {
+            const num = String(index + 1).padStart(2, "0");
 
-async function getGroups(api) {
-  const threads = await api.getThreadList(
-    100,
-    null,
-    ["INBOX"]
-  );
+            msg += `  ${num} ⊸ ${group.name || "بدون اسم"}\n`;
+            msg += `  ╰ 𝙸𝙳: [ ${group.threadID} ]\n\n`;
+        });
 
-  if (!Array.isArray(threads)) {
-    return [];
-  }
+        msg += `── ◸ 𝚂𝚄𝙼𝙼𝙰𝚁𝚈 ◿ ──\n`;
+        msg += `│ ✦ المجموعات: ${groupList.length}\n`;
+        msg += `│ ✦ للخروج: رد برقم المجموعة\n`;
+        msg += `╰─────────────────╯`;
 
-  return threads.filter(thread => {
-    if (!thread || !thread.threadID) {
-      return false;
+        return api.sendMessage(
+            msg,
+            event.threadID,
+            (err, info) => {
+                if (err || !info?.messageID) return;
+
+                global.client.handleReply.push({
+                    name: module.exports.config.name,
+                    messageID: info.messageID,
+                    author: String(event.senderID),
+                    groupList
+                });
+            },
+            event.messageID
+        );
+
+    } catch (error) {
+        console.error("[لاست]", error);
+        return api.sendMessage(
+            "╮ ✕ تعذر جلب قائمة المجموعات.",
+            event.threadID
+        );
     }
+};
 
-    return (
-      thread.isGroup === true ||
-      thread.threadType === "GROUP"
-    );
-  });
-}
+module.exports.handleReply = async function ({ api, event, handleReply }) {
+    if (String(event.senderID) !== DEVELOPER_ID) return;
 
-function getName(group) {
-  return (
-    group.name ||
-    group.threadName ||
-    "مجموعة بدون اسم"
-  );
-}
-
-function send(api, event, message) {
-  return api.sendMessage(
-    message,
-    event.threadID,
-    event.messageID
-  );
-}
-
-module.exports.run = async function ({
-  api,
-  event,
-  args
-}) {
-  const {
-    threadID,
-    senderID
-  } = event;
-
-  // المطور فقط
-  if (String(senderID) !== DEV_ID) {
-    return send(
-      api,
-      event,
-      "هذا الأمر خاص بالمطور."
-    );
-  }
-
-  const action = String(args[0] || "")
-    .trim()
-    .toLowerCase();
-
-  const number = Number(args[1]);
-
-  try {
-    const groups = await getGroups(api);
-
-    /*
-     * ─────────────────
-     * تنفيذ حظر أو خروج
-     * ─────────────────
-     */
+    const index = parseInt(String(event.body).trim(), 10);
 
     if (
-      action === "حظر" ||
-      action === "خروج"
+        Number.isNaN(index) ||
+        index <= 0 ||
+        index > handleReply.groupList.length
     ) {
-      if (
-        !Number.isInteger(number) ||
-        number < 1
-      ) {
-        return send(
-          api,
-          event,
-          "الاستخدام الصحيح:\n/لاست حظر رقم\n/لاست خروج رقم\n\nمثال:\n/لاست حظر 1\n/لاست خروج 3"
+        return api.sendMessage(
+            "╮ ✕ يرجى إرسال رقم صحيح من القائمة.",
+            event.threadID,
+            event.messageID
         );
-      }
+    }
 
-      const target = groups[number - 1];
+    const groupExit = handleReply.groupList[index - 1];
 
-      if (!target) {
-        return send(
-          api,
-          event,
-          `لا توجد مجموعة بالرقم ${number}.\nعدد المجموعات الحالية: ${groups.length}`
-        );
-      }
+    if (!groupExit?.threadID) return;
 
-      const targetID = String(target.threadID);
-      const targetName = getName(target);
+    return api.removeUserFromGroup(
+        api.getCurrentUserID(),
+        groupExit.threadID,
+        error => {
+            if (error) {
+                return api.sendMessage(
+                    `╮ ✕ تعذر الخروج من: ${groupExit.name || "المجموعة"}`,
+                    event.threadID,
+                    event.messageID
+                );
+            }
 
-      /*
-       * حظر
-       */
-      if (action === "حظر") {
-        const blocked = loadBlocked();
-
-        if (!blocked.includes(targetID)) {
-          blocked.push(targetID);
-          saveBlocked(blocked);
+            return api.sendMessage(
+                `╮ ◸ تـمَّ الإجـراء ◿\n│\n╰ ⊸ غادرتُ المجموعة: ${groupExit.name || "المجموعة"}`,
+                event.threadID,
+                event.messageID
+            );
         }
-      }
-
-      /*
-       * خروج
-       */
-      await api.removeUserFromGroup(
-        String(api.getCurrentUserID()),
-        targetID
-      );
-
-      if (action === "حظر") {
-        return send(
-          api,
-          event,
-          `تم حظر المجموعة والخروج منها.\n\nالاسم: ${targetName}\nID: ${targetID}\nالرقم: ${number}`
-        );
-      }
-
-      return send(
-        api,
-        event,
-        `تم خروج البوت من المجموعة.\n\nالاسم: ${targetName}\nID: ${targetID}\nالرقم: ${number}`
-      );
-    }
-
-    /*
-     * ─────────────────
-     * عرض المجموعات
-     * ─────────────────
-     */
-
-    if (!groups.length) {
-      return send(
-        api,
-        event,
-        "البوت غير موجود في أي مجموعة حاليًا."
-      );
-    }
-
-    const blocked = loadBlocked();
-
-    let text =
-      `المجموعات التي يتواجد فيها البوت:\n\n`;
-
-    groups.forEach((group, index) => {
-      const id = String(group.threadID);
-      const name = getName(group);
-
-      text +=
-        `${index + 1}. ${name}\n` +
-        `ID: ${id}\n` +
-        `الحالة: ${
-          blocked.includes(id)
-            ? "محظورة"
-            : "نشطة"
-        }\n\n`;
-    });
-
-    text +=
-      "استخدم:\n" +
-      "/لاست حظر رقم\n" +
-      "/لاست خروج رقم\n\n" +
-      "مثال:\n" +
-      "/لاست حظر 1\n" +
-      "/لاست خروج 3";
-
-    return send(api, event, text);
-
-  } catch (error) {
-    console.error(
-      "[لاست] Error:",
-      error
     );
-
-    return send(
-      api,
-      event,
-      `حدث خطأ أثناء تنفيذ الأمر.\n\nالخطأ: ${error.message || "غير معروف"}`
-    );
-  }
 };
