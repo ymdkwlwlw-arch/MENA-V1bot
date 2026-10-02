@@ -20,40 +20,32 @@ var { body, senderID, threadID, messageID } = event;
 var senderID = String(senderID),
 threadID = String(threadID);
 
-
 /*
-==================================================
-[إضافة] تحديد المطور
-==================================================
+==============================
+نظام الصيانة
+==============================
 */
 
 const isDeveloper =
 ADMINBOT.includes(senderID) ||
 senderID === String(api.getCurrentUserID());
 
-
-/*
-==================================================
-[إضافة] وضع الصيانة
-==================================================
-*/
-
 if (
 global.botMaintenance === true &&
 !isDeveloper
 ) {
-return api.sendMessage(
+return api.setMessageReaction(
 "🚫",
-threadID,
-messageID
+messageID,
+() => {},
+true
 );
 }
 
-
 /*
-==================================================
-[إضافة] No prefix
-==================================================
+==============================
+No prefix
+==============================
 */
 
 if (
@@ -69,7 +61,6 @@ threadID,
 messageID
 );
 }
-
 
 const args = (body || "").trim().split(/ +/);
 const commandName = args.shift()?.toLowerCase();
