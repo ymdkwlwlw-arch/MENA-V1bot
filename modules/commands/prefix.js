@@ -1,6 +1,6 @@
 module.exports.config = {
     name: "prefix",
-    version: "1.0.0",
+    version: "1.1.0",
     hasPermssion: 2,
     credits: "Developer",
     description: "عرض وتغيير بادئة البوت",
@@ -13,6 +13,13 @@ module.exports.config = {
 module.exports.run = async function ({ api, event, args }) {
     try {
         const threadID = String(event.threadID);
+        const botID = String(api.getCurrentUserID());
+
+        /*
+        ==========================================
+        عرض البادئة
+        ==========================================
+        */
 
         if (args.length === 0) {
             const prefix =
@@ -38,6 +45,12 @@ module.exports.run = async function ({ api, event, args }) {
             );
         }
 
+        /*
+        ==========================================
+        البادئة الجديدة
+        ==========================================
+        */
+
         const newPrefix = args[0];
 
         if (!newPrefix || newPrefix.length > 10) {
@@ -48,7 +61,18 @@ module.exports.run = async function ({ api, event, args }) {
             );
         }
 
+        const oldPrefix =
+            global.config.PREFIX || "";
+
+        /*
+        تغيير البادئة العامة
+        */
+
         global.config.PREFIX = newPrefix;
+
+        /*
+        حفظ بادئة الشات
+        */
 
         if (!global.data.threadPrefix) {
             global.data.threadPrefix = new Map();
@@ -59,28 +83,104 @@ module.exports.run = async function ({ api, event, args }) {
             newPrefix
         );
 
-        try {
-            const botID = api.getCurrentUserID();
+        /*
+        ==========================================
+        تغيير كنية البوت
+        ==========================================
+        */
 
-            if (typeof api.changeNickname === "function") {
+        try {
+            const info =
+                await api.getThreadInfo(threadID);
+
+            let currentNickname = "";
+
+            /*
+            الحصول على الكنية الحالية
+            */
+
+            if (
+                info &&
+                info.nicknames &&
+                info.nicknames[botID]
+            ) {
+                currentNickname =
+                    info.nicknames[botID];
+            }
+
+            /*
+            إذا لم توجد كنية،
+            نأخذ اسم الحساب
+            */
+
+            if (!currentNickname) {
+                try {
+                    const userInfo =
+                        await api.getUserInfo([botID]);
+
+                    if (
+                        userInfo &&
+                        userInfo[botID] &&
+                        userInfo[botID].name
+                    ) {
+                        currentNickname =
+                            userInfo[botID].name;
+                    }
+                } catch (e) {}
+            }
+
+            /*
+            ======================================
+            استبدال البادئة فقط
+            ======================================
+            */
+
+            let newNickname;
+
+            if (
+                oldPrefix &&
+                currentNickname.startsWith(oldPrefix)
+            ) {
+                newNickname =
+                    newPrefix +
+                    currentNickname.substring(
+                        oldPrefix.length
+                    );
+            } else {
+                newNickname =
+                    newPrefix +
+                    " " +
+                    currentNickname;
+            }
+
+            /*
+            تغيير الكنية
+            */
+
+            if (
+                typeof api.changeNickname ===
+                "function"
+            ) {
                 await new Promise(resolve => {
                     api.changeNickname(
-                        newPrefix,
+                        newNickname.trim(),
                         threadID,
                         botID,
                         () => resolve()
                     );
                 });
             }
+
         } catch (error) {
             console.error(
-                "PREFIX NICKNAME:",
+                "PREFIX NICKNAME ERROR:",
                 error
             );
         }
 
         return api.sendMessage(
-            "تم تغيير البادئة إلى: " + newPrefix,
+            "تم تغيير البادئة إلى: " +
+            newPrefix,
             threadID,
             event.messageID
         );
@@ -89,7 +189,7 @@ module.exports.run = async function ({ api, event, args }) {
         console.error("prefix:", error);
 
         return api.sendMessage(
-            "حدث خطأ أثناء تغيير البادئة.",
+            "حدث خطأ أثناء تنفيذ prefix.",
             event.threadID,
             event.messageID
         );
