@@ -3,10 +3,10 @@ module.exports.config = {
     version: "1.0.0",
     hasPermssion: 2,
     credits: "Developer",
-    description: "إدارة بادئة البوت",
-    usePrefix: true,
+    description: "عرض وتغيير بادئة البوت",
+    usePrefix: false,
     commandCategory: "النظام",
-    usages: "prefix | prefix / | No prefix",
+    usages: "prefix | prefix /",
     cooldowns: 0
 };
 
@@ -14,56 +14,29 @@ module.exports.run = async function ({ api, event, args }) {
     try {
         const threadID = String(event.threadID);
 
-        /*
-        ==========================================
-        NO PREFIX
-        ==========================================
-        */
-
-        if (
-            args.length > 0 &&
-            args.join(" ").toLowerCase() === "no prefix"
-        ) {
-            global.config.PREFIX = "";
-
-            return api.sendMessage(
-                "تم إلغاء البادئة.\nالبوت يعمل الآن بدون بادئة.",
-                threadID,
-                event.messageID
-            );
-        }
-
-        /*
-        ==========================================
-        SHOW PREFIX
-        ==========================================
-        */
-
         if (args.length === 0) {
-            const currentPrefix =
+            const prefix =
                 global.config.PREFIX || "No prefix";
 
-            const chatPrefix =
+            let chatPrefix = prefix;
+
+            if (
                 global.data.threadPrefix &&
-                global.data.threadPrefix.get(threadID)
-                    ? global.data.threadPrefix.get(threadID)
-                    : currentPrefix;
+                global.data.threadPrefix.has(threadID)
+            ) {
+                chatPrefix =
+                    global.data.threadPrefix.get(threadID);
+            }
 
             return api.sendMessage(
                 "البادئة العامة: " +
-                currentPrefix +
+                prefix +
                 "\nبادئة الشات: " +
                 chatPrefix,
                 threadID,
                 event.messageID
             );
         }
-
-        /*
-        ==========================================
-        CHANGE PREFIX
-        ==========================================
-        */
 
         const newPrefix = args[0];
 
@@ -77,10 +50,6 @@ module.exports.run = async function ({ api, event, args }) {
 
         global.config.PREFIX = newPrefix;
 
-        /*
-        حفظ بادئة الشات
-        */
-
         if (!global.data.threadPrefix) {
             global.data.threadPrefix = new Map();
         }
@@ -90,19 +59,10 @@ module.exports.run = async function ({ api, event, args }) {
             newPrefix
         );
 
-        /*
-        ==========================================
-        تغيير كنية البوت في الشات
-        ==========================================
-        */
-
         try {
-            const botID =
-                api.getCurrentUserID();
+            const botID = api.getCurrentUserID();
 
-            if (
-                typeof api.changeNickname === "function"
-            ) {
+            if (typeof api.changeNickname === "function") {
                 await new Promise(resolve => {
                     api.changeNickname(
                         newPrefix,
@@ -114,14 +74,13 @@ module.exports.run = async function ({ api, event, args }) {
             }
         } catch (error) {
             console.error(
-                "PREFIX NICKNAME ERROR:",
+                "PREFIX NICKNAME:",
                 error
             );
         }
 
         return api.sendMessage(
-            "تم تغيير البادئة إلى: " +
-            newPrefix,
+            "تم تغيير البادئة إلى: " + newPrefix,
             threadID,
             event.messageID
         );
