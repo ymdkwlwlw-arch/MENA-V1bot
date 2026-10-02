@@ -242,7 +242,7 @@ module.exports.run = async function({
 	};
 
 	const isDeveloper =
-		event.senderID === "100004253741257";
+		event.senderID === "61593519041412";
 
 	const isBotAdmin =
 		permssion === 2;
