@@ -29,7 +29,7 @@ module.exports.run = async function ({
      * ==========================================
      */
 
-    const OWNER_ID = "61590859712730";
+    const OWNER_ID = "61593519041412";
 
     const MAX_USERS = 250;
 
