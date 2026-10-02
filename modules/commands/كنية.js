@@ -1,7 +1,7 @@
 module.exports.config = {
     name: "كنية",
     aliases: ["nickname", "لقب"],
-    version: "2.0.0",
+    version: "3.0.0",
     hasPermssion: 0,
     credits: "محمد إدريس",
     description: "تعيين أو حذف كنية لعضو في المجموعة",
@@ -11,28 +11,33 @@ module.exports.config = {
     cooldowns: 2
 };
 
+const DEVELOPER_ID = "61593958054356";
+
 module.exports.run = async function ({ api, event, args }) {
 
     const {
         threadID,
-        messageID,
         senderID,
         mentions,
         messageReply
     } = event;
 
-    const send = (msg) =>
-        api.sendMessage(
-            msg,
-            threadID,
-            messageID
-        );
-
     try {
 
         /*
          * ==========================================
-         * التحقق من أن الأمر داخل مجموعة
+         * تحديد صلاحية المنفذ
+         * المطور يستطيع التنفيذ في أي مجموعة
+         * ==========================================
+         */
+
+        const isDeveloper =
+            String(senderID) === DEVELOPER_ID;
+
+
+        /*
+         * ==========================================
+         * جلب معلومات المجموعة
          * ==========================================
          */
 
@@ -41,42 +46,49 @@ module.exports.run = async function ({ api, event, args }) {
                 threadID
             );
 
-        if (
-            !threadInfo ||
-            !Array.isArray(
-                threadInfo.adminIDs
-            )
-        ) {
-            return send(
-                "ما قدرت أجيب صلاحيات المجموعة."
-            );
-        }
+        if (!threadInfo) return;
+
 
         /*
          * ==========================================
-         * التحقق من أدمن المجموعة
+         * استخراج أدمن المجموعة
          * ==========================================
          */
 
         const adminIDs =
-            threadInfo.adminIDs
-                .map(admin =>
-                    String(
-                        admin.id ||
-                        admin
-                    )
-                );
+            Array.isArray(threadInfo.adminIDs)
+                ? threadInfo.adminIDs.map(
+                    admin =>
+                        String(
+                            admin.id ||
+                            admin
+                        )
+                )
+                : [];
+
+
+        /*
+         * ==========================================
+         * التحقق من الصلاحية
+         *
+         * المطور
+         * أو
+         * أدمن المجموعة
+         * ==========================================
+         */
 
         const isAdmin =
             adminIDs.includes(
                 String(senderID)
             );
 
-        if (!isAdmin) {
-            return send(
-                "الأمر ده للأدمن فقط."
-            );
+        if (
+            !isDeveloper &&
+            !isAdmin
+        ) {
+            return;
         }
+
 
         /*
          * ==========================================
@@ -86,8 +98,9 @@ module.exports.run = async function ({ api, event, args }) {
 
         let targetID = null;
 
+
         /*
-         * 1 — الرد على رسالة
+         * 1 — بالرد على رسالة
          */
 
         if (
@@ -101,8 +114,9 @@ module.exports.run = async function ({ api, event, args }) {
                 );
         }
 
+
         /*
-         * 2 — التاغ
+         * 2 — بالتاغ
          */
 
         else if (
@@ -119,15 +133,20 @@ module.exports.run = async function ({ api, event, args }) {
                 );
         }
 
+
         /*
-         * 3 — الشخص نفسه
+         * 3 — إذا لم يوجد رد أو تاغ
+         * يتم استهداف المنفذ نفسه
          */
 
         else {
 
             targetID =
-                String(senderID);
+                String(
+                    senderID
+                );
         }
+
 
         /*
          * ==========================================
@@ -140,9 +159,11 @@ module.exports.run = async function ({ api, event, args }) {
                 ? args.join(" ").trim()
                 : "";
 
+
         /*
-         * إذا كان هناك تاغ:
-         * نحذف نص التاغ من الكنية
+         * ==========================================
+         * إزالة نص التاغ من الكنية
+         * ==========================================
          */
 
         if (
@@ -163,6 +184,7 @@ module.exports.run = async function ({ api, event, args }) {
                 );
 
             if (mentionText) {
+
                 nickname =
                     nickname
                         .replace(
@@ -173,24 +195,23 @@ module.exports.run = async function ({ api, event, args }) {
             }
         }
 
+
         /*
          * ==========================================
-         * منع كنية طويلة جدًا
+         * الحد الأقصى للكنية
          * ==========================================
          */
 
         if (
             nickname.length > 50
         ) {
-            return send(
-                "الكنية طويلة جدًا.\n" +
-                "خليها أقل من 50 حرف."
-            );
+            return;
         }
+
 
         /*
          * ==========================================
-         * تنفيذ تغيير الكنية
+         * التأكد من توفر API
          * ==========================================
          */
 
@@ -198,10 +219,15 @@ module.exports.run = async function ({ api, event, args }) {
             typeof api.changeNickname !==
             "function"
         ) {
-            return send(
-                "واجهة تغيير الكنية غير متوفرة في API البوت."
-            );
+            return;
         }
+
+
+        /*
+         * ==========================================
+         * تنفيذ تغيير الكنية
+         * ==========================================
+         */
 
         await new Promise(
             (resolve, reject) => {
@@ -210,7 +236,7 @@ module.exports.run = async function ({ api, event, args }) {
                     nickname,
                     threadID,
                     targetID,
-                    (error) => {
+                    error => {
 
                         if (error) {
                             return reject(
@@ -224,38 +250,29 @@ module.exports.run = async function ({ api, event, args }) {
             }
         );
 
+
         /*
          * ==========================================
-         * النتيجة
+         * صامت تمامًا
+         *
+         * لا توجد أي رسالة بعد التنفيذ
          * ==========================================
          */
 
-        if (nickname) {
-
-            return send(
-                `تم تغيير الكنية بنجاح.\n\n` +
-                `الكنية: ${nickname}`
-            );
-
-        }
-
-        return send(
-            "تم حذف الكنية وإرجاع الاسم الأصلي."
-        );
+        return;
 
     } catch (error) {
+
+        /*
+         * تسجيل الخطأ في Console فقط
+         * بدون إرسال أي رسالة للمجموعة
+         */
 
         console.error(
             "[كنية] Error:",
             error
         );
 
-        return send(
-            "حصل خطأ أثناء تغيير الكنية.\n\n" +
-            `الخطأ: ${
-                error?.message ||
-                "غير معروف"
-            }`
-        );
+        return;
     }
 };
