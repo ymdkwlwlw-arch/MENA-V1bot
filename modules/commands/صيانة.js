@@ -1,6 +1,6 @@
 module.exports.config = {
     name: "صيانة",
-    version: "1.0.0",
+    version: "1.1.0",
     hasPermssion: 2,
     credits: "Developer",
     description: "تشغيل وإيقاف وضع الصيانة",
