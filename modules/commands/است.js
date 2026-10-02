@@ -13,7 +13,7 @@ module.exports.config = {
 const fs = require("fs");
 const path = require("path");
 
-const DEVELOPER_ID = "61593519041412";
+const DEVELOPER_ID = "61593958054356";
 const BLOCK_FILE = path.join(__dirname, "است_محظورة.json");
 
 
