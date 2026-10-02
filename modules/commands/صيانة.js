@@ -3,8 +3,8 @@ module.exports.config = {
     version: "1.0.0",
     hasPermssion: 2,
     credits: "Developer",
-    description: "تشغيل أو إيقاف وضع الصيانة",
-    usePrefix: true,
+    description: "تشغيل وإيقاف وضع الصيانة",
+    usePrefix: false,
     commandCategory: "النظام",
     usages: "صيانة",
     cooldowns: 0
@@ -17,16 +17,10 @@ module.exports.run = function ({ api, event }) {
                 ? false
                 : true;
 
-        if (global.botMaintenance) {
-            return api.sendMessage(
-                "تم تشغيل وضع الصيانة.",
-                event.threadID,
-                event.messageID
-            );
-        }
-
         return api.sendMessage(
-            "تم إيقاف وضع الصيانة.",
+            global.botMaintenance
+                ? "تم تشغيل وضع الصيانة."
+                : "تم إيقاف وضع الصيانة.",
             event.threadID,
             event.messageID
         );
