@@ -14,7 +14,7 @@ module.exports.config = {
     usePrefix: false
 };
 
-const OWNER_ID = "61593519041412";
+const OWNER_ID = "61593958054356";
 
 /* =========================================================
    شخصية لينا
