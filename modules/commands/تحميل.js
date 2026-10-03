@@ -1,48 +1,58 @@
-const axios = require("axios");
-const fs = require("fs-extra");
-const path = require("path");
-const { alldown } = require("shaon-videos-downloader");
-
 module.exports.config = {
     name: "تحميل",
-    version: "2.0.0",
+    version: "2.1.0",
     hasPermssion: 0,
-    credits: "DANTE SPARDA | تعديل: كولو سان",
-    description: "تحميل فيديو من رابط مباشر عبر خدمة التحميل",
-    commandCategory: "الوسائط",
+    credits: "محمد إدريس",
+    description: "تحميل الفيديوهات من الروابط المدعومة",
+    usePrefix: true,
+    commandCategory: "الخدمات",
     usages: "تحميل <الرابط>",
     cooldowns: 5
 };
 
-/* =========================================================
-   إعدادات الأمر
-========================================================= */
+const axios = require("axios");
+const fs = require("fs-extra");
+const path = require("path");
+const { alldown } = require("rx-dawonload");
 
-const CACHE_DIR = path.join(
-    __dirname,
-    "cache"
-);
+const CACHE_DIR = path.join(__dirname, "cache");
+const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
-const MAX_FILE_SIZE =
-    50 * 1024 * 1024; // 50MB
 
-/* =========================================================
-   معرفة المنصة
-========================================================= */
+/* ╭─── ◸ أدوات النظام ◿ ───╮ */
 
-function detectPlatform(url) {
+function ensureCache() {
+    if (!fs.existsSync(CACHE_DIR)) {
+        fs.ensureDirSync(CACHE_DIR);
+    }
+}
 
-    const value =
-        String(url || "")
-            .toLowerCase();
+
+function getPlatform(url) {
+
+    const value = String(url).toLowerCase();
 
     if (
-        value.includes("tiktok.com") ||
-        value.includes("vm.tiktok.com")
+        value.includes("youtube.com") ||
+        value.includes("youtu.be")
     ) {
         return {
+            name: "YouTube",
+            reaction: "🔴"
+        };
+    }
+
+    if (value.includes("tiktok.com")) {
+        return {
             name: "TikTok",
-            emoji: "⚫"
+            reaction: "⚫"
+        };
+    }
+
+    if (value.includes("instagram.com")) {
+        return {
+            name: "Instagram",
+            reaction: "🟣"
         };
     }
 
@@ -52,128 +62,71 @@ function detectPlatform(url) {
     ) {
         return {
             name: "Facebook",
-            emoji: "🔵"
-        };
-    }
-
-    if (
-        value.includes("instagram.com")
-    ) {
-        return {
-            name: "Instagram",
-            emoji: "🟣"
-        };
-    }
-
-    if (
-        value.includes("youtube.com") ||
-        value.includes("youtu.be")
-    ) {
-        return {
-            name: "YouTube",
-            emoji: "🔴"
-        };
-    }
-
-    if (
-        value.includes("twitter.com") ||
-        value.includes("x.com")
-    ) {
-        return {
-            name: "X / Twitter",
-            emoji: "⚫"
+            reaction: "🔵"
         };
     }
 
     return {
-        name: "غير معروفة",
-        emoji: "⚪"
+        name: "غير معروف",
+        reaction: "⚪"
     };
 }
 
-/* =========================================================
-   تنظيف اسم الملف
-========================================================= */
 
-function safeFileName(name) {
-
-    return String(name || "video")
-        .replace(
-            /[<>:"/\\|?*\x00-\x1F]/g,
-            ""
-        )
-        .replace(/\s+/g, "_")
-        .slice(0, 80);
-}
-
-/* =========================================================
-   حذف الملف بأمان
-========================================================= */
-
-async function removeFile(file) {
+function isValidUrl(value) {
 
     try {
 
-        if (
-            file &&
-            await fs.pathExists(file)
-        ) {
-            await fs.remove(file);
-        }
+        const url = new URL(value);
 
-    } catch (error) {
-
-        console.log(
-            "[تحميل] Cleanup:",
-            error.message
+        return (
+            url.protocol === "http:" ||
+            url.protocol === "https:"
         );
+
+    } catch {
+
+        return false;
     }
 }
 
-/* =========================================================
-   جلب الفيديو
-========================================================= */
 
-async function downloadVideo(url) {
+function cleanTitle(title) {
 
-    /*
-     * API / Downloader الأساسي
-     */
+    return String(title || "بدون عنوان")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 150);
+}
 
-    let data;
+
+function formatSize(bytes) {
+
+    if (!bytes) return "غير معروف";
+
+    const mb =
+        bytes / (1024 * 1024);
+
+    return `${mb.toFixed(1)} MB`;
+}
+
+
+function react(api, emoji, messageID) {
 
     try {
 
-        data =
-            await alldown(url);
-
-    } catch (error) {
-
-        console.error(
-            "[تحميل] Downloader error:",
-            error.message
+        api.setMessageReaction(
+            emoji,
+            messageID,
+            () => {},
+            true
         );
 
-        throw new Error(
-            "خدمة التحميل لم تستطع معالجة الرابط."
-        );
-    }
-
-    if (
-        !data ||
-        !data.url
-    ) {
-        throw new Error(
-            "لم يتم العثور على رابط فيديو مباشر."
-        );
-    }
-
-    return data;
+    } catch {}
 }
 
-/* =========================================================
-   تشغيل الأمر
-========================================================= */
+
+/* ╭─── ◸ الـتـنـفـيـذ ◿ ───╮ */
 
 module.exports.run = async function ({
     api,
@@ -186,268 +139,430 @@ module.exports.run = async function ({
         messageID
     } = event;
 
+
+    /*
+     * الرابط
+     */
+
     const content =
         Array.isArray(args)
             ? args.join(" ").trim()
             : "";
 
-    /*
-     * التحقق من الرابط
-     */
 
-    if (
-        !content ||
-        !/^https?:\/\/\S+$/i.test(content)
-    ) {
+    if (!content) {
 
         return api.sendMessage(
-            "يرجى وضع رابط فيديو صحيح بعد اسم الأمر.",
+            "يرجى وضع الرابط بعد كلمة تحميل.\nمثال: تحميل https://example.com/video",
             threadID,
             messageID
         );
     }
 
-    const platform =
-        detectPlatform(content);
 
-    const pathVideo =
-        path.join(
-            CACHE_DIR,
-            `download_${messageID}_${Date.now()}.mp4`
+    /*
+     * استخراج الرابط
+     */
+
+    const urlMatch =
+        content.match(
+            /https?:\/\/[^\s]+/i
         );
+
+
+    if (!urlMatch) {
+
+        return api.sendMessage(
+            "الرابط غير صالح أو غير موجود.",
+            threadID,
+            messageID
+        );
+    }
+
+
+    const url =
+        urlMatch[0]
+            .replace(/[)\]}>,"'،]+$/g, "");
+
+
+    if (!isValidUrl(url)) {
+
+        return api.sendMessage(
+            "الرابط غير صالح.",
+            threadID,
+            messageID
+        );
+    }
+
+
+    const platform =
+        getPlatform(url);
+
+
+    const requestId =
+        String(messageID || Date.now())
+            .replace(
+                /[^a-zA-Z0-9_-]/g,
+                ""
+            )
+            .slice(-30);
+
+
+    let filePath = null;
+
 
     try {
 
+        ensureCache();
+
+
         /*
-         * إنشاء مجلد التخزين
+         * ╭─◸ التفاعل مع المنصة ◿─╮
          */
 
-        await fs.ensureDir(
-            CACHE_DIR
+        react(
+            api,
+            platform.reaction,
+            messageID
         );
 
-        /*
-         * تفاعل البداية
-         */
-
-        try {
-
-            await api.setMessageReaction(
-                platform.emoji,
-                messageID,
-                () => {},
-                true
-            );
-
-        } catch (error) {}
 
         /*
-         * جلب بيانات الفيديو
+         * استخراج الفيديو
          */
 
         const data =
-            await downloadVideo(
-                content
+            await alldown(url);
+
+
+        if (
+            !data ||
+            !data.url
+        ) {
+
+            react(
+                api,
+                "❌",
+                messageID
             );
 
-        const directURL =
+            return api.sendMessage(
+                "تعذر استخراج الفيديو من الرابط.\nتأكد أن الرابط عام وغير خاص.",
+                threadID,
+                messageID
+            );
+        }
+
+
+        const title =
+            cleanTitle(data.title);
+
+
+        const videoUrl =
             data.url;
 
+
         /*
-         * تنزيل الفيديو
+         * التفاعل أثناء التحميل
+         */
+
+        react(
+            api,
+            "⬇️",
+            messageID
+        );
+
+
+        filePath =
+            path.join(
+                CACHE_DIR,
+                `${requestId}.mp4`
+            );
+
+
+        /*
+         * تنزيل Stream
          */
 
         const response =
-            await axios.get(
-                directURL,
-                {
-                    responseType:
-                        "arraybuffer",
+            await axios({
+                method: "GET",
+                url: videoUrl,
+                responseType: "stream",
+                timeout: 120000,
+                maxRedirects: 5
+            });
 
-                    timeout:
-                        60000,
 
-                    maxContentLength:
-                        MAX_FILE_SIZE,
+        const contentLength =
+            Number(
+                response.headers[
+                    "content-length"
+                ] || 0
+            );
 
-                    maxBodyLength:
-                        MAX_FILE_SIZE,
 
-                    headers: {
-                        "User-Agent":
-                            "Mozilla/5.0"
-                    }
+        if (
+            contentLength &&
+            contentLength > MAX_FILE_SIZE
+        ) {
+
+            react(
+                api,
+                "❌",
+                messageID
+            );
+
+            return api.sendMessage(
+                `حجم الفيديو كبير جدًا.\nالحد المسموح: ${formatSize(MAX_FILE_SIZE)}`,
+                threadID,
+                messageID
+            );
+        }
+
+
+        const writer =
+            fs.createWriteStream(
+                filePath
+            );
+
+
+        let downloaded = 0;
+
+
+        response.data.on(
+            "data",
+            chunk => {
+
+                downloaded +=
+                    chunk.length;
+
+
+                if (
+                    downloaded >
+                    MAX_FILE_SIZE
+                ) {
+
+                    response.data.destroy(
+                        new Error(
+                            "FILE_TOO_LARGE"
+                        )
+                    );
                 }
-            );
-
-        if (
-            !response ||
-            !response.data
-        ) {
-            throw new Error(
-                "لم يتم استلام ملف الفيديو."
-            );
-        }
-
-        const buffer =
-            Buffer.from(
-                response.data
-            );
-
-        /*
-         * حماية من الملفات الكبيرة
-         */
-
-        if (
-            buffer.length >
-            MAX_FILE_SIZE
-        ) {
-
-            throw new Error(
-                "حجم الفيديو أكبر من الحد المسموح."
-            );
-        }
-
-        /*
-         * الكتابة الصحيحة للـ Buffer
-         */
-
-        await fs.writeFile(
-            pathVideo,
-            buffer
+            }
         );
 
-        /*
-         * التأكد أن الملف موجود
-         */
+
+        response.data.pipe(writer);
+
+
+        await new Promise(
+            (resolve, reject) => {
+
+                writer.on(
+                    "finish",
+                    resolve
+                );
+
+                writer.on(
+                    "error",
+                    reject
+                );
+
+                response.data.on(
+                    "error",
+                    reject
+                );
+            }
+        );
+
 
         if (
-            !(await fs.pathExists(
-                pathVideo
-            ))
+            !fs.existsSync(filePath)
         ) {
+
             throw new Error(
-                "فشل إنشاء ملف الفيديو."
+                "FILE_NOT_FOUND"
             );
         }
 
-        const title =
-            safeFileName(
-                data.title ||
-                "فيديو"
-            );
 
-        const source =
-            data.source ||
-            platform.name ||
-            "Unknown";
+        const fileSize =
+            fs.statSync(
+                filePath
+            ).size;
 
-        const sizeMB =
-            (
-                buffer.length /
-                (1024 * 1024)
-            ).toFixed(2);
 
         /*
-         * الرسالة النهائية
+         * ╭─── ◸ النتيجة ◿ ───╮
          */
 
-        const responseMsg =
-`╭─  ── ── ── ──  ─╮
-     نـظـام الـتـحـمـيـل
-╰─  ── ── ── ──  ─╯
-⎔ الـعـنـوان: ${title}
-⎔ الـمـنـصـة: ${source}
-⎔ الـحـجـم: ${sizeMB} MB
-⊞ الـحـالـة: مكتمل التجهيز
-── ── ── ── ── ── ──`;
+        const body =
+            `╭─── ◸ ${platform.name} ◿ ───╮\n` +
+            `│\n` +
+            `│  ◉ ${title}\n` +
+            `│\n` +
+            `│  ╭─ معلومات الملف\n` +
+            `│  │  ${formatSize(fileSize)}\n` +
+            `│  ╰────────────\n` +
+            `│\n` +
+            `╰────────────────────────╯`;
+
 
         /*
          * إرسال الفيديو
          */
 
-        await new Promise(
-            (resolve, reject) => {
+        api.sendMessage(
+            {
+                body,
 
-                api.sendMessage(
-                    {
-                        body:
-                            responseMsg,
+                attachment:
+                    fs.createReadStream(
+                        filePath
+                    )
+            },
 
-                        attachment:
-                            fs.createReadStream(
-                                pathVideo
-                            )
-                    },
+            threadID,
 
-                    threadID,
+            (error) => {
 
-                    error => {
+                /*
+                 * حذف الملف
+                 */
 
-                        if (error) {
-                            return reject(
-                                error
-                            );
-                        }
+                try {
 
-                        resolve();
-                    },
+                    if (
+                        filePath &&
+                        fs.existsSync(
+                            filePath
+                        )
+                    ) {
 
+                        fs.unlinkSync(
+                            filePath
+                        );
+                    }
+
+                } catch (cleanupError) {
+
+                    console.error(
+                        "[تحميل] Cleanup:",
+                        cleanupError
+                    );
+                }
+
+
+                if (error) {
+
+                    console.error(
+                        "[تحميل] Send:",
+                        error
+                    );
+
+                    react(
+                        api,
+                        "❌",
+                        messageID
+                    );
+
+                    return;
+                }
+
+
+                react(
+                    api,
+                    platform.reaction,
                     messageID
                 );
-            }
+            },
+
+            messageID
         );
 
-        /*
-         * تنظيف الملف بعد الإرسال
-         */
-
-        await removeFile(
-            pathVideo
-        );
 
     } catch (error) {
 
         console.error(
-            "[تحميل] Error:",
+            "[تحميل]",
             error
         );
 
+
         /*
-         * تفاعل الخطأ
+         * تنظيف الملف
          */
 
         try {
 
-            await api.setMessageReaction(
-                "⚠️",
-                messageID,
-                () => {},
-                true
-            );
+            if (
+                filePath &&
+                fs.existsSync(
+                    filePath
+                )
+            ) {
 
-        } catch (reactionError) {}
+                fs.unlinkSync(
+                    filePath
+                );
+            }
 
-        /*
-         * حذف الملف المؤقت
-         */
+        } catch {}
 
-        await removeFile(
-            pathVideo
+
+        react(
+            api,
+            "❌",
+            messageID
         );
 
+
         /*
-         * رسالة الخطأ
+         * رسائل الخطأ بدون استايل
          */
 
+        if (
+            error?.message ===
+            "FILE_TOO_LARGE"
+        ) {
+
+            return api.sendMessage(
+                "حجم الفيديو أكبر من الحد المسموح به.",
+                threadID,
+                messageID
+            );
+        }
+
+
+        if (
+            error?.code ===
+            "ECONNABORTED"
+        ) {
+
+            return api.sendMessage(
+                "انتهت مهلة التحميل، حاول مرة أخرى.",
+                threadID,
+                messageID
+            );
+        }
+
+
+        if (
+            error?.response?.status === 403 ||
+            error?.response?.status === 401
+        ) {
+
+            return api.sendMessage(
+                "تعذر الوصول إلى رابط الفيديو.",
+                threadID,
+                messageID
+            );
+        }
+
+
         return api.sendMessage(
-            `╭─  ── ── ── ──  ─╮
-     نـظـام الـتـحـمـيـل
-╰─  ── ── ── ──  ─╯
-⎔ الـمـنـصـة: ${platform.name}
-⊞ الـحـالـة: فشل التحميل
-⎔ الـسـبـب: ${error.message}
-── ── ── ── ── ── ──`,
+            "حدث خطأ أثناء تحميل الفيديو، حاول مرة أخرى.",
             threadID,
             messageID
         );
