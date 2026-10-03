@@ -2055,4 +2055,119 @@ module.exports.handleReply = async function ({
             const result =
                 await executeBotCommand({
                     api,
-                   
+                    event,
+                    args:
+                        requested.args,
+                    command,
+                    Threads,
+                    Users,
+                    Currencies,
+                    models,
+                    permssion
+                });
+
+            if (result.success) {
+                return;
+            }
+
+            await sendMessage(
+                api,
+                addLinaEnding(
+                    result.reason
+                ),
+                threadID
+            );
+
+            return;
+        }
+
+        /* =====================================================
+           استمرار المحادثة
+        ===================================================== */
+
+        addConversationMessage(
+            threadID,
+            senderID,
+            "user",
+            query
+        );
+
+        const answer =
+            await askAI({
+                query,
+                threadID,
+                senderID
+            });
+
+        if (!answer) {
+
+            const conversation =
+                getConversation(
+                    threadID,
+                    senderID
+                );
+
+            conversation.messages.pop();
+
+            await sendMessage(
+                api,
+
+                addLinaEnding(
+                    isOwner(senderID)
+                        ? "الخدمة الذكية ما ردت هسي يا أبوي."
+                        : "الخدمة الذكية ما ردت هسي."
+                ),
+
+                threadID
+            );
+
+            return;
+        }
+
+        addConversationMessage(
+            threadID,
+            senderID,
+            "assistant",
+            answer
+        );
+
+        const info =
+            await sendMessage(
+                api,
+                answer,
+                threadID
+            );
+
+        registerReply(
+            info,
+            event
+        );
+
+    } catch (error) {
+
+        console.error(
+            "[LINA REPLY ERROR]",
+            error
+        );
+
+        await sendMessage(
+            api,
+
+            addLinaEnding(
+                isOwner(senderID)
+                    ? "حصل خطأ وأنا بحاول أكمل معاك يا أبوي."
+                    : "حصل خطأ وأنا بحاول أكمل الكلام."
+            ),
+
+            threadID
+        );
+
+    } finally {
+
+        await typing(
+            api,
+            threadID,
+            false
+        );
+    }
+};
