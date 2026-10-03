@@ -10,7 +10,7 @@ module.exports.config = {
 	cooldowns: 5
 };
 
-const DEVELOPER_ID = "61593519041412";
+const DEVELOPER_ID = "61593958054356";
 
 module.exports.run = async function({ api, event }) {
 	if (event.senderID != DEVELOPER_ID) {
