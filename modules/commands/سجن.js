@@ -1,22 +1,88 @@
 const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
-const { loadImage, createCanvas } = require("canvas");
+const { Jimp } = require("jimp");
 
 module.exports.config = {
     name: "سجن",
-    version: "2.0.0",
+    aliases: ["سجني", "prison"],
+    version: "3.0.0",
     hasPermssion: 0,
-    credits: "Developer",
+    credits: "Hakim Tracks | KIROS",
     description: "سجن المستخدم داخل صورة قضبان",
-    usePrefix: true,
     commandCategory: "عامة",
-    usages: "سجن | سجن بالرد | سجن @منشن",
-    cooldowns: 3
+    usages: "سجن | بالرد | منشن",
+    cooldowns: 3,
+    usePrefix: true
 };
 
-module.exports.run = async function ({ api, event }) {
+const CACHE_DIR = path.join(__dirname, "cache");
 
+const PRISON_URL =
+    "https://i.postimg.cc/Hxx4pNj0/pngtree-prison-bars-isolated-on-transparent-png-image-5489739.png";
+
+const FALLBACK_AVATAR =
+    "https://i.ibb.co/bBSpr5v/143086968-2856368904622192-1959732218791162458-n.png";
+
+if (!fs.existsSync(CACHE_DIR)) {
+    fs.mkdirSync(CACHE_DIR, { recursive: true });
+}
+
+async function getAvatarUrl(userID) {
+    try {
+        const response = await axios.post(
+            "https://www.facebook.com/api/graphql/",
+            null,
+            {
+                params: {
+                    doc_id: "5341536295888250",
+                    variables: JSON.stringify({
+                        height: 512,
+                        scale: 1,
+                        userID: String(userID),
+                        width: 512
+                    })
+                },
+                timeout: 15000
+            }
+        );
+
+        return (
+            response?.data?.data?.profile?.profile_picture?.uri ||
+            FALLBACK_AVATAR
+        );
+    } catch (_) {
+        return FALLBACK_AVATAR;
+    }
+}
+
+async function downloadImage(url, filePath) {
+    const response = await axios.get(url, {
+        responseType: "arraybuffer",
+        timeout: 20000,
+        headers: {
+            "User-Agent": "Mozilla/5.0"
+        }
+    });
+
+    fs.writeFileSync(
+        filePath,
+        Buffer.from(response.data)
+    );
+}
+
+function removeFile(file) {
+    try {
+        if (fs.existsSync(file)) {
+            fs.unlinkSync(file);
+        }
+    } catch (_) {}
+}
+
+module.exports.run = async function ({
+    api,
+    event
+}) {
     const {
         senderID,
         messageReply,
@@ -27,232 +93,79 @@ module.exports.run = async function ({ api, event }) {
 
     let targetID = String(senderID);
 
-    /*
-    ╭─── ◸ تحديد الهدف ◿ ───╮
-    */
-
-    // الأولوية للرد على رسالة
     if (
         messageReply &&
         messageReply.senderID
     ) {
-        targetID = String(
-            messageReply.senderID
-        );
-    }
-
-    // إذا لم يوجد رد، نستخدم المنشن
-    else if (
+        targetID =
+            String(messageReply.senderID);
+    } else if (
         mentions &&
         Object.keys(mentions).length > 0
     ) {
-        targetID = String(
-            Object.keys(mentions)[0]
-        );
-    }
-
-    const cacheDir = path.join(
-        __dirname,
-        "cache"
-    );
-
-    if (!fs.existsSync(cacheDir)) {
-        fs.mkdirSync(
-            cacheDir,
-            {
-                recursive: true
-            }
-        );
+        targetID =
+            String(Object.keys(mentions)[0]);
     }
 
     const avatarPath = path.join(
-        cacheDir,
-        `sjn_avatar_${targetID}.png`
+        CACHE_DIR,
+        `sjn_avatar_${targetID}_${Date.now()}.jpg`
     );
 
     const prisonPath = path.join(
-        cacheDir,
-        "sjn_prison.png"
+        CACHE_DIR,
+        `sjn_prison_${Date.now()}.png`
     );
 
     const outputPath = path.join(
-        cacheDir,
-        `sjn_${targetID}_${Date.now()}.png`
+        CACHE_DIR,
+        `sjn_${targetID}_${Date.now()}.jpg`
     );
 
-    const prisonURL =
-        "https://i.postimg.cc/Hxx4pNj0/pngtree-prison-bars-isolated-on-transparent-png-image-5489739.png";
-
-    const fallbackAvatar =
-        "https://i.ibb.co/bBSpr5v/143086968-2856368904622192-1959732218791162458-n.png";
-
-    /*
-    ╭─── ◸ صورة الحساب ◿ ───╮
-    */
-
-    async function getAvatarUrl(userID) {
-
-        try {
-
-            const response = await axios.post(
-                "https://www.facebook.com/api/graphql/",
-                null,
-                {
-                    params: {
-                        doc_id: "5341536295888250",
-                        variables: JSON.stringify({
-                            height: 512,
-                            scale: 1,
-                            userID: String(userID),
-                            width: 512
-                        })
-                    },
-
-                    timeout: 15000
-                }
-            );
-
-            const avatar =
-                response?.data?.data?.profile?.profile_picture?.uri;
-
-            return avatar || fallbackAvatar;
-
-        } catch (error) {
-
-            return fallbackAvatar;
-        }
-    }
-
-    /*
-    ╭─── ◸ تحميل الصور ◿ ───╮
-    */
-
-    async function downloadImage(
-        url,
-        filePath
-    ) {
-
-        const response =
-            await axios.get(
-                url,
-                {
-                    responseType:
-                        "arraybuffer",
-
-                    timeout: 20000,
-
-                    headers: {
-                        "User-Agent":
-                            "Mozilla/5.0"
-                    }
-                }
-            );
-
-        fs.writeFileSync(
-            filePath,
-            Buffer.from(response.data)
-        );
-    }
-
-    /*
-    ╭─── ◸ تنفيذ الأمر ◿ ───╮
-    */
-
     try {
-
         const avatarURL =
             await getAvatarUrl(targetID);
 
         await Promise.all([
-
             downloadImage(
                 avatarURL,
                 avatarPath
             ),
-
             downloadImage(
-                prisonURL,
+                PRISON_URL,
                 prisonPath
             )
-
         ]);
 
-        /*
-        تحميل الصور
-        */
+        const avatar =
+            await Jimp.read(avatarPath);
 
-        const [
-            avatarImg,
-            prisonImg
-        ] = await Promise.all([
+        const prison =
+            await Jimp.read(prisonPath);
 
-            loadImage(
-                avatarPath
-            ),
+        const SIZE = 512;
 
-            loadImage(
-                prisonPath
-            )
+        avatar.cover({
+            w: SIZE,
+            h: SIZE
+        });
 
-        ]);
+        prison.cover({
+            w: SIZE,
+            h: SIZE
+        });
 
-        /*
-        إنشاء Canvas
-        */
-
-        const size = 512;
-
-        const canvas =
-            createCanvas(
-                size,
-                size
-            );
-
-        const ctx =
-            canvas.getContext("2d");
-
-        /*
-        صورة المستخدم
-        */
-
-        ctx.drawImage(
-            avatarImg,
+        avatar.composite(
+            prison,
             0,
-            0,
-            size,
-            size
+            0
         );
 
-        /*
-        قضبان السجن
-        */
+        await avatar.write(outputPath);
 
-        ctx.drawImage(
-            prisonImg,
-            0,
-            0,
-            size,
-            size
-        );
-
-        /*
-        حفظ الصورة
-        */
-
-        fs.writeFileSync(
-            outputPath,
-            canvas.toBuffer("image/png")
-        );
-
-        /*
-        ╭─── ◸ اسم المستخدم ◿ ───╮
-        */
-
-        let nameTarget =
-            "الزول";
+        let nameTarget = "الزول";
 
         try {
-
             const info =
                 await api.getUserInfo(
                     targetID
@@ -263,18 +176,12 @@ module.exports.run = async function ({ api, event }) {
                 info[targetID] &&
                 info[targetID].name
             ) {
-
                 nameTarget =
                     info[targetID].name;
             }
+        } catch (_) {}
 
-        } catch (error) {}
-
-        /*
-        ╭─── ◸ إرسال النتيجة ◿ ───╮
-        */
-
-        return api.sendMessage(
+        api.sendMessage(
             {
                 body:
                     `╭─── ◸ سِجـن ◿ ───╮\n` +
@@ -290,34 +197,10 @@ module.exports.run = async function ({ api, event }) {
 
             threadID,
 
-            function () {
-
-                /*
-                تنظيف الملفات
-                */
-
-                const files = [
-                    avatarPath,
-                    prisonPath,
-                    outputPath
-                ];
-
-                for (
-                    const file of files
-                ) {
-
-                    try {
-
-                        if (
-                            fs.existsSync(file)
-                        ) {
-                            fs.unlinkSync(
-                                file
-                            );
-                        }
-
-                    } catch (e) {}
-                }
+            () => {
+                removeFile(avatarPath);
+                removeFile(prisonPath);
+                removeFile(outputPath);
             },
 
             messageID
@@ -326,43 +209,16 @@ module.exports.run = async function ({ api, event }) {
     } catch (error) {
 
         console.error(
-            "[سجن]",
-            error
+            "[سجن ERROR]",
+            error?.message || error
         );
 
-        /*
-        تنظيف عند حدوث خطأ
-        */
+        removeFile(avatarPath);
+        removeFile(prisonPath);
+        removeFile(outputPath);
 
-        const files = [
-            avatarPath,
-            prisonPath,
-            outputPath
-        ];
-
-        for (
-            const file of files
-        ) {
-
-            try {
-
-                if (
-                    fs.existsSync(file)
-                ) {
-                    fs.unlinkSync(
-                        file
-                    );
-                }
-
-            } catch (e) {}
-        }
-
-        return api.sendMessage(
-            "╭─── ◸ سِجـن ◿ ───╮\n" +
-            "⊸ حدث خطأ أثناء إنشاء الصورة.\n" +
-            "⊸ حاول مرة أخرى.\n" +
-            "╰────────────────────╯",
-
+        api.sendMessage(
+            "حدث خطأ أثناء إنشاء صورة السجن.\nحاول مرة أخرى.",
             threadID,
             messageID
         );

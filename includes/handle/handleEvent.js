@@ -8,6 +8,11 @@ module.exports = function ({api ,models, Users, Threads, Currencies, ...rest }) 
         const { events } = global.client;
         const { allowInbox, DeveloperMode } = global.config;
         var { senderID, threadID } = event;
+
+        if (event.logMessageType) {
+            console.log(
+            );
+        }
         senderID = String(senderID);
         threadID = String(threadID);
         if (userBanned.has(senderID)|| threadBanned.has(threadID) || allowInbox == ![] && senderID == threadID) return;

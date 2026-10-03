@@ -1,268 +1,699 @@
-const axios = require("axios");
-const fs = require("fs-extra");
+const fs = require("fs");
+const fsp = fs.promises;
 const path = require("path");
-const { alldown } = require("rx-dawonload");
+const { spawn } = require("child_process");
+
+const CACHE_DIR = path.join(__dirname, "cache");
+const MAX_SIZE = 25 * 1024 * 1024;
 
 module.exports.config = {
     name: "تحميل",
-    version: "2.1.0",
+    aliases: ["download", "dl", "تنزيل", "داونلود"],
+    version: "3.0.0",
     hasPermssion: 0,
-    credits: "محمد إدريس",
-    description: "تحميل فيديو من الرابط",
-    commandCategory: "الخدمات",
-    usages: "تحميل <الرابط>",
-    cooldowns: 5
+    credits: "ڪولو سآن",
+    description: "تحميل الفيديوهات والصوتيات من المواقع المدعومة بواسطة yt-dlp",
+    usePrefix: true,
+    commandCategory: "media",
+    usages: "تحميل رابط | تحميل صوت رابط | تحميل 360 رابط | تحميل 480 رابط | تحميل 720 رابط",
+    cooldowns: 10
 };
 
-const CACHE_DIR = path.join(__dirname, "cache");
+/* ╭────────────────────────────────────╮
+   │ أدوات النظام
+   ╰────────────────────────────────────╯ */
 
 async function ensureCache() {
-    await fs.ensureDir(CACHE_DIR);
+    await fsp.mkdir(CACHE_DIR, { recursive: true });
 }
 
-function getPlatform(url) {
-    if (/youtube\.com|youtu\.be/i.test(url)) return "YouTube";
-    if (/tiktok\.com/i.test(url)) return "TikTok";
-    if (/instagram\.com/i.test(url)) return "Instagram";
-    if (/facebook\.com|fb\.watch/i.test(url)) return "Facebook";
-    return "Media";
+function formatBytes(bytes) {
+    if (!bytes || bytes <= 0) return "غير معروف";
+
+    const units = ["B", "KB", "MB", "GB"];
+    let size = bytes;
+    let index = 0;
+
+    while (size >= 1024 && index < units.length - 1) {
+        size /= 1024;
+        index++;
+    }
+
+    return `${size.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
 }
 
-function getReaction(platform) {
-    const reactions = {
-        YouTube: "🔴",
-        TikTok: "⚫",
-        Instagram: "🟣",
-        Facebook: "🔵",
-        Media: "⚪"
+function detectPlatform(url) {
+    const value = String(url).toLowerCase();
+
+    if (value.includes("youtube.com") || value.includes("youtu.be")) {
+        return { name: "YouTube", icon: "◉" };
+    }
+
+    if (value.includes("tiktok.com")) {
+        return { name: "TikTok", icon: "◈" };
+    }
+
+    if (value.includes("instagram.com")) {
+        return { name: "Instagram", icon: "◎" };
+    }
+
+    if (value.includes("facebook.com") || value.includes("fb.watch")) {
+        return { name: "Facebook", icon: "●" };
+    }
+
+    if (value.includes("twitter.com") || value.includes("x.com")) {
+        return { name: "X / Twitter", icon: "×" };
+    }
+
+    return { name: "موقع مدعوم", icon: "◇" };
+}
+
+function cleanUrl(value) {
+    return String(value || "")
+        .trim()
+        .replace(/^<|>$/g, "");
+}
+
+function isUrl(value) {
+    try {
+        const url = new URL(value);
+        return ["http:", "https:"].includes(url.protocol);
+    } catch {
+        return false;
+    }
+}
+
+function cleanTitle(title) {
+    if (!title) return "";
+    return String(title)
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 60);
+}
+
+/* ╭────────────────────────────────────╮
+   │ واجهة الرسائل
+   ╰────────────────────────────────────╯ */
+
+function startMessage(platform, mode, quality) {
+    return [
+        "╭─── ◸ نـظـام الـتـحـمـيـل ◿ ───╮",
+        "│",
+        `│ ${platform.icon} المنصة   ⊸ ${platform.name}`,
+        `│ ◇ الوضع    ⊸ ${mode}`,
+        `│ ◇ الجودة   ⊸ ${quality}`,
+        "│",
+        "│ ⊸ جارِ تحليل الرابط...",
+        "│",
+        "╰──────────────────────────────╯"
+    ].join("\n");
+}
+
+function loadingMessage(platform, mode, quality) {
+    return [
+        "╭─── ◸ جـارِ الـتـحـمـيـل ◿ ───╮",
+        "│",
+        `│ ${platform.icon} المنصة   ⊸ ${platform.name}`,
+        `│ ◇ النوع    ⊸ ${mode}`,
+        `│ ◇ الجودة   ⊸ ${quality}`,
+        "│ ◇ الحالة   ⊸ جاري التحميل...",
+        "│",
+        "│ ⊸ يتم تجهيز الملف للإرسال",
+        "│",
+        "╰──────────────────────────────╯"
+    ].join("\n");
+}
+
+function successMessage(platform, mode, quality, size, title) {
+    const lines = [
+        "╭─── ◸ تـم الـتـحـمـيـل ◿ ───╮",
+        "│",
+        `│ ${platform.icon} المنصة   ⊸ ${platform.name}`,
+        `│ ◇ النوع    ⊸ ${mode}`,
+        `│ ◇ الجودة   ⊸ ${quality}`,
+        `│ ◇ الحجم    ⊸ ${size}`
+    ];
+
+    if (title) {
+        lines.push(`│ ◇ العنوان  ⊸ ${title}`);
+    }
+
+    lines.push(
+        "│ ◇ الحالة   ⊸ اكتمل بنجاح",
+        "│",
+        "╰────────────────────────────╯"
+    );
+
+    return lines.join("\n");
+}
+
+function errorMessage(message) {
+    return [
+        "╭─── ◸ تـعـذر الـتـحـمـيـل ◿ ───╮",
+        "│",
+        `│ ⊸ ${message}`,
+        "│",
+        "╰──────────────────────────────╯"
+    ].join("\n");
+}
+
+/* ╭────────────────────────────────────╮
+   │ تشغيل yt-dlp
+   ╰────────────────────────────────────╯ */
+
+function runYtDlp(args) {
+    return new Promise((resolve, reject) => {
+        const child = spawn("yt-dlp", args, {
+            cwd: CACHE_DIR,
+            shell: false
+        });
+
+        let stdout = "";
+        let stderr = "";
+
+        child.stdout.on("data", data => {
+            stdout += data.toString();
+        });
+
+        child.stderr.on("data", data => {
+            stderr += data.toString();
+        });
+
+        child.on("error", error => {
+            reject(error);
+        });
+
+        child.on("close", code => {
+            if (code === 0) {
+                resolve({
+                    stdout,
+                    stderr,
+                    code
+                });
+            } else {
+                const error = new Error(stderr || stdout || `yt-dlp exited with code ${code}`);
+                error.code = code;
+                reject(error);
+            }
+        });
+    });
+}
+
+/* ╭────────────────────────────────────╮
+   │ استخراج الملف الناتج
+   ╰────────────────────────────────────╯ */
+
+async function findDownloadedFile(baseName) {
+    const files = await fsp.readdir(CACHE_DIR);
+
+    const candidates = files
+        .filter(file => file.startsWith(baseName))
+        .filter(file => !file.endsWith(".part"))
+        .filter(file => !file.endsWith(".ytdl"))
+        .filter(file => !file.endsWith(".temp"))
+        .map(file => path.join(CACHE_DIR, file));
+
+    if (!candidates.length) {
+        return null;
+    }
+
+    let best = null;
+    let bestSize = -1;
+
+    for (const file of candidates) {
+        try {
+            const stat = await fsp.stat(file);
+
+            if (stat.isFile() && stat.size > bestSize) {
+                best = file;
+                bestSize = stat.size;
+            }
+        } catch (_) {}
+    }
+
+    return best;
+}
+
+async function removeByBaseName(baseName) {
+    try {
+        const files = await fsp.readdir(CACHE_DIR);
+
+        for (const file of files) {
+            if (!file.startsWith(baseName)) continue;
+
+            try {
+                await fsp.unlink(path.join(CACHE_DIR, file));
+            } catch (_) {}
+        }
+    } catch (_) {}
+}
+
+/* ╭────────────────────────────────────╮
+   │ التفاعل بشكل آمن
+   ╰────────────────────────────────────╯ */
+
+async function safeReaction(api, reaction, messageID) {
+    try {
+        if (
+            api &&
+            typeof api.setMessageReaction === "function" &&
+            messageID
+        ) {
+            await new Promise(resolve => {
+                try {
+                    api.setMessageReaction(
+                        reaction,
+                        messageID,
+                        () => resolve(),
+                        true
+                    );
+                } catch (_) {
+                    resolve();
+                }
+            });
+        }
+    } catch (_) {}
+}
+
+/* ╭────────────────────────────────────╮
+   │ تعديل الرسالة بشكل آمن
+   ╰────────────────────────────────────╯ */
+
+async function safeEdit(api, messageID, body) {
+    if (!messageID) return false;
+
+    try {
+        if (
+            api &&
+            typeof api.editMessage === "function"
+        ) {
+            await new Promise(resolve => {
+                try {
+                    api.editMessage(
+                        body,
+                        messageID,
+                        () => resolve()
+                    );
+                } catch (_) {
+                    resolve();
+                }
+            });
+
+            return true;
+        }
+    } catch (_) {}
+
+    return false;
+}
+
+/* ╭────────────────────────────────────╮
+   │ استخراج العنوان
+   ╰────────────────────────────────────╯ */
+
+async function getTitle(url) {
+    try {
+        const result = await runYtDlp([
+            "--no-playlist",
+            "--no-warnings",
+            "--skip-download",
+            "--print",
+            "%(title)s",
+            url
+        ]);
+
+        return cleanTitle(result.stdout);
+    } catch (_) {
+        return "";
+    }
+}
+
+/* ╭────────────────────────────────────╮
+   │ تحديد الجودة
+   ╰────────────────────────────────────╯ */
+
+function parseQuality(args) {
+    if (!args.length) {
+        return {
+            quality: "480p",
+            height: 480
+        };
+    }
+
+    const first = String(args[0]).toLowerCase();
+
+    const match = first.match(/^(\d{3,4})p?$/);
+
+    if (match) {
+        const height = parseInt(match[1], 10);
+
+        if ([144, 240, 360, 480, 720, 1080].includes(height)) {
+            return {
+                quality: `${height}p`,
+                height
+            };
+        }
+    }
+
+    return {
+        quality: "480p",
+        height: 480
     };
-
-    return reactions[platform] || "⚪";
 }
+
+function extractModeAndUrl(args) {
+    if (!args.length) {
+        return null;
+    }
+
+    let mode = "فيديو";
+    let quality = null;
+    let url = "";
+
+    const first = String(args[0]).toLowerCase();
+
+    if (
+        first === "صوت" ||
+        first === "audio" ||
+        first === "mp3" ||
+        first === "اغنية"
+    ) {
+        mode = "صوت";
+        args.shift();
+    }
+
+    const q = parseQuality(args);
+
+    if (
+        args.length &&
+        /^(\d{3,4})p?$/i.test(String(args[0]))
+    ) {
+        quality = q;
+        args.shift();
+    }
+
+    url = cleanUrl(args.join(" "));
+
+    return {
+        mode,
+        quality: quality || {
+            quality: "480p",
+            height: 480
+        },
+        url
+    };
+}
+
+/* ╭────────────────────────────────────╮
+   │ الأمر الرئيسي
+   ╰────────────────────────────────────╯ */
 
 module.exports.run = async function ({
     api,
     event,
     args
 }) {
-    const {
+    const threadID = event.threadID;
+    const messageID = event.messageID;
+
+    if (!args || !args.length) {
+        return api.sendMessage(
+            [
+                "╭─── ◸ طـريـقـة الاسـتـخـدام ◿ ───╮",
+                "│",
+                "│ ⊸ تحميل رابط",
+                "│ ⊸ تحميل صوت رابط",
+                "│ ⊸ تحميل 360 رابط",
+                "│ ⊸ تحميل 480 رابط",
+                "│ ⊸ تحميل 720 رابط",
+                "│",
+                "│ ◇ مثال:",
+                "│ ⊸ تحميل https://youtu.be/xxxx",
+                "│",
+                "╰──────────────────────────────╯"
+            ].join("\n"),
+            threadID,
+            messageID
+        );
+    }
+
+    const parsed = extractModeAndUrl([...args]);
+
+    if (!parsed || !parsed.url) {
+        return api.sendMessage(
+            errorMessage("أرسل رابطًا صالحًا بعد الأمر."),
+            threadID,
+            messageID
+        );
+    }
+
+    if (!isUrl(parsed.url)) {
+        return api.sendMessage(
+            errorMessage("الرابط غير صالح أو غير مدعوم."),
+            threadID,
+            messageID
+        );
+    }
+
+    const platform = detectPlatform(parsed.url);
+
+    const mode = parsed.mode;
+    const quality = parsed.quality;
+
+    await ensureCache();
+
+    await safeReaction(api, platform.icon, messageID);
+
+    await api.sendMessage(
+        startMessage(
+            platform,
+            mode,
+            quality.quality
+        ),
         threadID,
-        messageID,
-        body
-    } = event;
+        async (err, info) => {
+            if (!err && info && info.messageID) {
+                try {
+                    await safeReaction(
+                        api,
+                        "⏳",
+                        info.messageID
+                    );
+                } catch (_) {}
+            }
+        },
+        messageID
+    );
 
-    let url = args && args.length
-        ? args.join(" ").trim()
-        : "";
+    const baseName =
+        `download_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-    if (!url && body) {
-        const match = body.match(
-            /https?:\/\/[^\s]+/i
-        );
-
-        if (match) {
-            url = match[0];
-        }
-    }
-
-    if (!url) {
-        return api.sendMessage(
-            "استخدم الأمر بهذا الشكل:\nتحميل <الرابط>",
-            threadID,
-            () => {},
-            messageID
-        );
-    }
-
-    if (!/^https?:\/\/\S+$/i.test(url)) {
-        return api.sendMessage(
-            "الرابط غير صالح.",
-            threadID,
-            () => {},
-            messageID
-        );
-    }
-
-    const platform = getPlatform(url);
-    const reaction = getReaction(platform);
-
-    let filePath = null;
+    let outputFile = null;
 
     try {
-        await ensureCache();
+        /*
+         * الصوت
+         */
+        if (mode === "صوت") {
+            const outputTemplate =
+                path.join(
+                    CACHE_DIR,
+                    `${baseName}.%(ext)s`
+                );
 
-        try {
-            await api.setMessageReaction(
-                reaction,
-                messageID,
-                () => {},
-                true
-            );
-        } catch {}
-
-        let result;
-
-        try {
-            result = await alldown(url);
-        } catch (error) {
-            console.error("[تحميل] API Error:", error);
-
-            return api.sendMessage(
-                "تعذر الحصول على رابط التحميل.",
-                threadID,
-                () => {},
-                messageID
-            );
+            await runYtDlp([
+                "--no-playlist",
+                "--no-warnings",
+                "--no-update",
+                "--retries",
+                "10",
+                "--fragment-retries",
+                "10",
+                "--socket-timeout",
+                "30",
+                "--extractor-retries",
+                "3",
+                "--js-runtimes",
+                "deno",
+                "-x",
+                "--audio-format",
+                "mp3",
+                "--audio-quality",
+                "128K",
+                "-o",
+                outputTemplate,
+                parsed.url
+            ]);
         }
 
-        if (!result) {
-            return api.sendMessage(
-                "لم يتم العثور على ملف قابل للتحميل.",
-                threadID,
-                () => {},
-                messageID
-            );
+        /*
+         * الفيديو
+         */
+        else {
+            const outputTemplate =
+                path.join(
+                    CACHE_DIR,
+                    `${baseName}.%(ext)s`
+                );
+
+            await runYtDlp([
+                "--no-playlist",
+                "--no-warnings",
+                "--no-update",
+                "--retries",
+                "10",
+                "--fragment-retries",
+                "10",
+                "--file-access-retries",
+                "5",
+                "--extractor-retries",
+                "3",
+                "--socket-timeout",
+                "30",
+                "--js-runtimes",
+                "deno",
+                "-f",
+                `best[ext=mp4][height<=${quality.height}]/best[height<=${quality.height}]/best[ext=mp4]/best`,
+                "--merge-output-format",
+                "mp4",
+                "-o",
+                outputTemplate,
+                parsed.url
+            ]);
         }
 
-        const downloadURL =
-            result.url ||
-            result.download ||
-            result.downloadUrl ||
-            result.video ||
-            result.link;
+        outputFile = await findDownloadedFile(baseName);
 
-        if (!downloadURL) {
+        if (!outputFile) {
+            throw new Error("لم يتم العثور على الملف بعد انتهاء التحميل.");
+        }
+
+        const stat = await fsp.stat(outputFile);
+
+        if (!stat.isFile() || stat.size <= 0) {
+            throw new Error("الملف الناتج غير صالح.");
+        }
+
+        /*
+         * منع إرسال الملفات الكبيرة
+         */
+        if (stat.size > MAX_SIZE) {
+            await safeDelete(outputFile);
+
             return api.sendMessage(
-                "لم يتم العثور على رابط مباشر للملف.",
+                errorMessage(
+                    `حجم الملف ${formatBytes(stat.size)} ويتجاوز الحد المسموح 25 MB.`
+                ),
                 threadID,
-                () => {},
                 messageID
             );
         }
 
         const title =
-            result.title ||
-            result.name ||
-            "ملف بدون عنوان";
+            mode === "فيديو"
+                ? await getTitle(parsed.url)
+                : "";
 
-        const safeName =
-            `${Date.now()}_${Math.floor(Math.random() * 99999)}.mp4`;
-
-        filePath = path.join(
-            CACHE_DIR,
-            safeName
+        /*
+         * إرسال الملف
+         */
+        const report = successMessage(
+            platform,
+            mode,
+            quality.quality,
+            formatBytes(stat.size),
+            title
         );
 
-        await api.setMessageReaction(
-            "⬇️",
-            messageID,
-            () => {},
-            true
-        ).catch(() => {});
-
-        const response = await axios.get(
-            downloadURL,
-            {
-                responseType: "stream",
-                timeout: 120000,
-                maxContentLength: 50 * 1024 * 1024,
-                maxBodyLength: 50 * 1024 * 1024
-            }
-        );
+        await safeReaction(api, "✅", messageID);
 
         await new Promise((resolve, reject) => {
-            const writer =
-                fs.createWriteStream(filePath);
+            api.sendMessage(
+                {
+                    body: report,
+                    attachment: fs.createReadStream(outputFile)
+                },
+                threadID,
+                (err) => {
+                    if (err) {
+                        reject(err);
+                        return;
+                    }
 
-            response.data.pipe(writer);
-
-            writer.on("finish", resolve);
-            writer.on("error", reject);
-
-            response.data.on(
-                "error",
-                reject
+                    resolve();
+                },
+                messageID
             );
         });
-
-        if (
-            !fs.existsSync(filePath) ||
-            fs.statSync(filePath).size === 0
-        ) {
-            throw new Error(
-                "Downloaded file is empty"
-            );
-        }
-
-        const size =
-            fs.statSync(filePath).size;
-
-        const sizeMB =
-            (size / 1024 / 1024).toFixed(2);
-
-        const bodyMessage =
-            "╭─── ◸ " + platform + " ◿ ───╮\n" +
-            "│\n" +
-            "│  ◉ " + title + "\n" +
-            "│\n" +
-            "│  ╭─ معلومات الملف\n" +
-            "│  │  " + sizeMB + " MB\n" +
-            "│  ╰────────────\n" +
-            "│\n" +
-            "╰────────────────────────╯";
-
-        return api.sendMessage(
-            {
-                body: bodyMessage,
-                attachment:
-                    fs.createReadStream(filePath)
-            },
-            threadID,
-            (error) => {
-                try {
-                    if (
-                        filePath &&
-                        fs.existsSync(filePath)
-                    ) {
-                        fs.unlinkSync(filePath);
-                    }
-                } catch (cleanupError) {
-                    console.error(
-                        "[تحميل] Cleanup:",
-                        cleanupError
-                    );
-                }
-
-                if (error) {
-                    console.error(
-                        "[تحميل] Send Error:",
-                        error
-                    );
-                }
-            },
-            messageID
-        );
 
     } catch (error) {
         console.error(
             "[تحميل] Error:",
-            error
+            error && error.stack
+                ? error.stack
+                : error
         );
 
-        try {
-            if (
-                filePath &&
-                fs.existsSync(filePath)
-            ) {
-                fs.unlinkSync(filePath);
-            }
-        } catch {}
+        await safeReaction(api, "❌", messageID);
 
-        return api.sendMessage(
-            "تعذر تحميل الملف حاليًا، حاول مرة أخرى.",
+        let reason =
+            "تعذر تحميل الرابط حاليًا.";
+
+        const errorText = String(
+            error && error.message
+                ? error.message
+                : error
+        ).toLowerCase();
+
+        if (
+            errorText.includes("unsupported") ||
+            errorText.includes("no suitable") ||
+            errorText.includes("not supported")
+        ) {
+            reason =
+                "المنصة أو الرابط غير مدعوم حاليًا.";
+        }
+
+        else if (
+            errorText.includes("private") ||
+            errorText.includes("login") ||
+            errorText.includes("sign in")
+        ) {
+            reason =
+                "هذا المحتوى خاص أو يحتاج تسجيل دخول.";
+        }
+
+        else if (
+            errorText.includes("too large") ||
+            errorText.includes("25 mb")
+        ) {
+            reason =
+                "الملف أكبر من الحد المسموح للإرسال.";
+        }
+
+        else if (
+            errorText.includes("403") ||
+            errorText.includes("forbidden")
+        ) {
+            reason =
+                "المنصة رفضت طلب التحميل. جرّب الرابط مرة أخرى.";
+        }
+
+        else if (
+            errorText.includes("timed out") ||
+            errorText.includes("connection") ||
+            errorText.includes("reset")
+        ) {
+            reason =
+                "الاتصال انقطع أثناء التحميل. أعد المحاولة.";
+        }
+
+        await api.sendMessage(
+            errorMessage(reason),
             threadID,
-            () => {},
             messageID
         );
+
+    } finally {
+        await removeByBaseName(baseName);
     }
 };

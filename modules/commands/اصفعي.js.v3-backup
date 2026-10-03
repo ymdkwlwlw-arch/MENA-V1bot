@@ -1,0 +1,482 @@
+const axios = require("axios");
+const fs = require("fs-extra");
+const path = require("path");
+const { spawn } = require("child_process");
+
+module.exports.config = {
+    name: "اصفعي",
+    aliases: ["صفعة", "صفع", "slap"],
+    version: "3.0.0",
+    hasPermssion: 0,
+    credits: "ڪولو سآن",
+    description: "تركيب صورة العضو مع تأثير صفعة متحرك",
+    commandCategory: "ترفيه",
+    usages: "اصفعي @منشن أو بالرد",
+    cooldowns: 5,
+    usePrefix: true,
+    dependencies: {
+        "axios": "",
+        "fs-extra": ""
+    }
+};
+
+const CACHE_DIR = path.join(__dirname, "cache");
+const API_URL = "https://nekos.best/api/v2/slap";
+
+// --------------------------------------------------
+// أدوات مساعدة
+// --------------------------------------------------
+
+function safeReaction(api, reaction, messageID, threadID) {
+    return new Promise((resolve) => {
+        if (!api || !reaction || !messageID || !threadID) {
+            return resolve(false);
+        }
+
+        try {
+            api.setMessageReaction(
+                reaction,
+                messageID,
+                threadID,
+                () => resolve(true)
+            );
+        } catch (error) {
+            resolve(false);
+        }
+    });
+}
+
+function runFFmpeg(args) {
+    return new Promise((resolve, reject) => {
+        const ffmpeg = spawn("ffmpeg", args);
+
+        let stderr = "";
+
+        ffmpeg.stderr.on("data", (data) => {
+            stderr += data.toString();
+        });
+
+        ffmpeg.on("error", (error) => {
+            reject(error);
+        });
+
+        ffmpeg.on("close", (code) => {
+            if (code === 0) {
+                resolve();
+            } else {
+                reject(
+                    new Error(
+                        `FFmpeg exited with code ${code}\n${stderr.slice(-4000)}`
+                    )
+                );
+            }
+        });
+    });
+}
+
+async function checkFFmpeg() {
+    return new Promise((resolve) => {
+        const process = spawn("ffmpeg", ["-version"]);
+
+        process.on("error", () => resolve(false));
+        process.on("close", (code) => resolve(code === 0));
+    });
+}
+
+// --------------------------------------------------
+// تحميل صورة فيسبوك
+// --------------------------------------------------
+
+async function getAvatar(uid, output) {
+    const url =
+        `https://graph.facebook.com/${uid}/picture` +
+        `?width=720&height=720`;
+
+    const response = await axios.get(url, {
+        responseType: "arraybuffer",
+        timeout: 20000,
+        maxRedirects: 5,
+        headers: {
+            "User-Agent": "Mozilla/5.0"
+        }
+    });
+
+    if (!response.data || !response.data.length) {
+        throw new Error("Avatar response is empty");
+    }
+
+    await fs.outputFile(output, response.data);
+
+    return output;
+}
+
+// --------------------------------------------------
+// الحصول على تأثير الصفعة
+// --------------------------------------------------
+
+async function getSlapEffect(output) {
+    const response = await axios.get(API_URL, {
+        timeout: 20000,
+        headers: {
+            "User-Agent": "KIROS-Messenger-Bot (https://github.com/ymdkwlwlw-arch/MENA-V1bot)"
+        }
+    });
+
+    const effectURL =
+        response.data &&
+        response.data.results &&
+        response.data.results[0] &&
+        response.data.results[0].url;
+
+    if (!effectURL) {
+        throw new Error("Slap API returned no effect URL");
+    }
+
+    const gif = await axios.get(effectURL, {
+        responseType: "arraybuffer",
+        timeout: 30000,
+        headers: {
+            "User-Agent": "KIROS-Messenger-Bot (https://github.com/ymdkwlwlw-arch/MENA-V1bot)"
+        }
+    });
+
+    if (!gif.data || !gif.data.length) {
+        throw new Error("Slap effect is empty");
+    }
+
+    await fs.outputFile(output, gif.data);
+
+    return output;
+}
+
+// --------------------------------------------------
+// تركيب الصورة + تأثير الصفعة
+// --------------------------------------------------
+
+async function createSlap(avatar, effect, output) {
+    /*
+     * الخلفية:
+     * صورة المستخدم 720x720
+     *
+     * المقدمة:
+     * GIF الصفعة
+     *
+     * نحافظ على شفافية الـGIF إن كانت موجودة.
+     */
+
+    const args = [
+        "-y",
+
+        "-i",
+        avatar,
+
+        "-ignore_loop",
+        "0",
+
+        "-i",
+        effect,
+
+        "-filter_complex",
+
+        [
+            "[0:v]"
+                + "scale=720:720:force_original_aspect_ratio=increase,"
+                + "crop=720:720,"
+                + "setsar=1"
+                + "[bg];",
+
+            "[1:v]"
+                + "scale=720:-1:force_original_aspect_ratio=decrease,"
+                + "setsar=1"
+                + "[fx];",
+
+            "[bg][fx]"
+                + "overlay=(W-w)/2:(H-h)/2:shortest=1,"
+                + "fps=15,"
+                + "scale=720:720:flags=lanczos"
+                + "[v]"
+        ].join(""),
+
+        "-map",
+        "[v]",
+
+        "-loop",
+        "0",
+
+        "-t",
+        "5",
+
+        "-gifflags",
+        "-offsetting",
+
+        output
+    ];
+
+    await runFFmpeg(args);
+
+    if (!(await fs.pathExists(output))) {
+        throw new Error("FFmpeg output was not created");
+    }
+
+    const stat = await fs.stat(output);
+
+    if (!stat.size) {
+        throw new Error("FFmpeg output is empty");
+    }
+
+    return output;
+}
+
+// --------------------------------------------------
+// تصغير GIF إذا كان كبيراً
+// --------------------------------------------------
+
+async function optimizeGif(input, output) {
+    const args = [
+        "-y",
+        "-i",
+        input,
+
+        "-vf",
+        "fps=12,scale=600:600:flags=lanczos",
+
+        "-loop",
+        "0",
+
+        output
+    ];
+
+    await runFFmpeg(args);
+
+    if (!(await fs.pathExists(output))) {
+        throw new Error("Optimized GIF was not created");
+    }
+
+    return output;
+}
+
+// --------------------------------------------------
+// الأمر الرئيسي
+// --------------------------------------------------
+
+module.exports.run = async function ({ api, event }) {
+    const {
+        threadID,
+        messageID,
+        messageReply,
+        mentions
+    } = event;
+
+    let targetID = null;
+
+    // ----------------------------------------------
+    // الرد له الأولوية
+    // ----------------------------------------------
+
+    if (
+        messageReply &&
+        messageReply.senderID
+    ) {
+        targetID = messageReply.senderID;
+    }
+
+    // ----------------------------------------------
+    // ثم المنشن
+    // ----------------------------------------------
+
+    if (
+        !targetID &&
+        mentions &&
+        Object.keys(mentions).length > 0
+    ) {
+        targetID = Object.keys(mentions)[0];
+    }
+
+    // ----------------------------------------------
+    // لا يوجد شخص
+    // ----------------------------------------------
+
+    if (!targetID) {
+        return api.sendMessage(
+            "رد على رسالة الشخص أو اعمل له منشن.",
+            threadID,
+            messageID
+        );
+    }
+
+    // ----------------------------------------------
+    // تجهيز مجلد الكاش
+    // ----------------------------------------------
+
+    await fs.ensureDir(CACHE_DIR);
+
+    const stamp = `${targetID}_${Date.now()}`;
+
+    const avatarFile = path.join(
+        CACHE_DIR,
+        `slap_avatar_${stamp}.jpg`
+    );
+
+    const effectFile = path.join(
+        CACHE_DIR,
+        `slap_effect_${stamp}.gif`
+    );
+
+    const resultFile = path.join(
+        CACHE_DIR,
+        `slap_result_${stamp}.gif`
+    );
+
+    const optimizedFile = path.join(
+        CACHE_DIR,
+        `slap_final_${stamp}.gif`
+    );
+
+    try {
+        // ------------------------------------------
+        // فحص FFmpeg
+        // ------------------------------------------
+
+        const ffmpegOK = await checkFFmpeg();
+
+        if (!ffmpegOK) {
+            return api.sendMessage(
+                "FFmpeg غير مثبت أو غير متاح للنظام.",
+                threadID,
+                messageID
+            );
+        }
+
+        // ------------------------------------------
+        // انتظار
+        // ------------------------------------------
+
+        await safeReaction(
+            api,
+            "⏳",
+            messageID,
+            threadID
+        );
+
+        // ------------------------------------------
+        // تحميل Avatar
+        // ------------------------------------------
+
+        await getAvatar(
+            targetID,
+            avatarFile
+        );
+
+        // ------------------------------------------
+        // تحميل تأثير الصفعة
+        // ------------------------------------------
+
+        await getSlapEffect(
+            effectFile
+        );
+
+        // ------------------------------------------
+        // تركيب الاثنين
+        // ------------------------------------------
+
+        await createSlap(
+            avatarFile,
+            effectFile,
+            resultFile
+        );
+
+        // ------------------------------------------
+        // تحسين الحجم
+        // ------------------------------------------
+
+        let finalFile = resultFile;
+
+        const resultStat = await fs.stat(resultFile);
+
+        /*
+         * Messenger/FCA قد يتعامل بشكل أفضل
+         * مع ملف أصغر.
+         */
+
+        if (resultStat.size > 8 * 1024 * 1024) {
+            await optimizeGif(
+                resultFile,
+                optimizedFile
+            );
+
+            finalFile = optimizedFile;
+        }
+
+        // ------------------------------------------
+        // نجاح
+        // ------------------------------------------
+
+        await safeReaction(
+            api,
+            "✅",
+            messageID,
+            threadID
+        );
+
+        return api.sendMessage(
+            {
+                body:
+                    "╭─── ◸ صَفْعَة ◿ ───╮\n" +
+                    "│ تم تنفيذ الصفعة بنجاح.\n" +
+                    "│ الصورة + التأثير جاهزان.\n" +
+                    "╰──────────────────╯",
+
+                attachment:
+                    fs.createReadStream(finalFile)
+            },
+
+            threadID,
+
+            () => {
+                Promise.all([
+                    fs.remove(avatarFile),
+                    fs.remove(effectFile),
+                    fs.remove(resultFile),
+                    fs.remove(optimizedFile)
+                ]).catch(() => {});
+            },
+
+            messageID
+        );
+
+    } catch (error) {
+
+        // ------------------------------------------
+        // تنظيف
+        // ------------------------------------------
+
+        await Promise.all([
+            fs.remove(avatarFile),
+            fs.remove(effectFile),
+            fs.remove(resultFile),
+            fs.remove(optimizedFile)
+        ]).catch(() => {});
+
+        // ------------------------------------------
+        // إزالة انتظار
+        // ------------------------------------------
+
+        await safeReaction(
+            api,
+            "❌",
+            messageID,
+            threadID
+        );
+
+        console.error(
+            "[اصفعي] Error:",
+            error
+        );
+
+        return api.sendMessage(
+            "تعذر تنفيذ تأثير الصفعة حالياً.",
+            threadID,
+            messageID
+        );
+    }
+};

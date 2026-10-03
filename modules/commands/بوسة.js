@@ -1,338 +1,393 @@
+const axios = require("axios");
 const fs = require("fs-extra");
 const path = require("path");
 const { PassThrough } = require("stream");
-const {
-    createCanvas,
-    loadImage
-} = require("canvas");
-
+const { Jimp } = require("jimp");
 
 module.exports.config = {
     name: "بوسة",
     aliases: ["بوس", "kiss"],
-    version: "1.0.0",
+    version: "3.0.0",
     hasPermssion: 0,
-    credits: "KIROS",
-    description: "إنشاء صورة باستخدام صورتي صاحب الأمر والمستهدف",
+    credits: "Hakim Tracks | KIROS",
+    description: "دمج صورتي شخصين داخل قالب بوسة",
     commandCategory: "Fun",
-    usages: "بوسة @منشن أو بالرد على رسالة",
+    usages: "بوسة @منشن أو بالرد",
     cooldowns: 5,
     usePrefix: true
 };
 
-
 /* =========================================================
-   إعدادات القالب
+   قالب البوسة
    ========================================================= */
 
-const TEMPLATE = path.join(
-    __dirname,
-    "kiss.png"
-);
-
-
-/*
- * الدائرة اليسرى
- * = الشخص المستهدف
- */
-const TARGET_AVATAR = {
-    x: 300,
-    y: 360,
-    radius: 150
-};
-
-
-/*
- * الدائرة اليمنى
- * = صاحب الأمر
- */
-const SENDER_AVATAR = {
-    x: 720,
-    y: 440,
-    radius: 150
-};
-
+const BASE_URL =
+    "https://i.postimg.cc/3xXSfwLC/b67185ef51e95c164937feb591a23f4c.jpg";
 
 /* =========================================================
-   تحميل صورة البروفايل
+   صورة احتياطية
    ========================================================= */
 
-async function getAvatar(api, userID) {
+const FALLBACK_AVATAR =
+    "https://i.ibb.co/bBSpr5v/143086968-2856368904622192-1959732218791162458-n.png";
 
-    try {
+/* =========================================================
+   مجلد التخزين المؤقت
+   ========================================================= */
 
-        const info =
-            await api.getUserInfo(userID);
+const CACHE_DIR =
+    path.join(
+        __dirname,
+        "cache"
+    );
 
-        const user =
-            info?.[userID];
-
-        if (!user) {
-            throw new Error(
-                "لم يتم العثور على بيانات المستخدم."
-            );
-        }
-
-        const avatar =
-            user.thumbSrc ||
-            user.profileUrl ||
-            user.picture?.data?.url;
-
-        if (!avatar) {
-            throw new Error(
-                "رابط صورة البروفايل غير موجود."
-            );
-        }
-
-        return avatar;
-
-    } catch (error) {
-
-        throw new Error(
-            `تعذر الحصول على صورة المستخدم ${userID}`
-        );
-    }
+if (!fs.existsSync(CACHE_DIR)) {
+    fs.mkdirSync(
+        CACHE_DIR,
+        { recursive: true }
+    );
 }
 
-
 /* =========================================================
-   استخراج الشخص المستهدف
+   الحصول على المستهدف
    ========================================================= */
 
-function getTargetUserID(
-    event,
-    args
-) {
+function getTargetID(event) {
 
-    /*
-     * أولاً: الشخص الذي تم الرد على رسالته
-     */
-
-    if (
-        event.messageReply &&
-        event.messageReply.senderID
-    ) {
-
-        return event.messageReply.senderID;
-    }
-
-
-    /*
-     * ثانياً: المنشن
-     */
+    const {
+        senderID,
+        messageReply,
+        mentions
+    } = event;
 
     if (
-        event.mentions &&
-        Object.keys(event.mentions).length
+        messageReply &&
+        messageReply.senderID &&
+        String(messageReply.senderID) !==
+        String(senderID)
     ) {
-
-        return Object.keys(
-            event.mentions
-        )[0];
+        return messageReply.senderID;
     }
 
+    if (
+        mentions &&
+        Object.keys(mentions).length > 0
+    ) {
+        return Object.keys(mentions)[0];
+    }
 
     return null;
 }
 
-
 /* =========================================================
-   قص الصورة داخل دائرة
+   الحصول على صورة البروفايل
    ========================================================= */
 
-async function drawCircularAvatar(
-    ctx,
-    avatar,
-    x,
-    y,
-    radius
-) {
+async function getAvatarUrl(userID) {
 
-    const size =
-        radius * 2;
+    try {
 
+        const response =
+            await axios.post(
+                "https://www.facebook.com/api/graphql/",
+                null,
+                {
+                    params: {
+                        doc_id:
+                            "5341536295888250",
 
-    /*
-     * نأخذ مربعاً من منتصف الصورة
-     * حتى لا يتم تشويه الوجه.
-     */
+                        variables:
+                            JSON.stringify({
+                                height: 512,
+                                scale: 1,
+                                userID:
+                                    String(userID),
+                                width: 512
+                            })
+                    },
 
-    const sourceSize =
-        Math.min(
-            avatar.width,
-            avatar.height
-        );
+                    timeout: 15000,
 
+                    headers: {
+                        "User-Agent":
+                            "Mozilla/5.0"
+                    }
+                }
+            );
 
-    const sourceX =
-        (avatar.width -
-            sourceSize) / 2;
+        const url =
+            response?.data
+                ?.data
+                ?.profile
+                ?.profile_picture
+                ?.uri;
 
+        return url || FALLBACK_AVATAR;
 
-    const sourceY =
-        (avatar.height -
-            sourceSize) / 2;
+    } catch (error) {
 
-
-    ctx.save();
-
-
-    /*
-     * إنشاء الدائرة
-     */
-
-    ctx.beginPath();
-
-    ctx.arc(
-        x,
-        y,
-        radius,
-        0,
-        Math.PI * 2
-    );
-
-    ctx.closePath();
-
-    ctx.clip();
-
-
-    /*
-     * رسم الصورة داخل الدائرة
-     */
-
-    ctx.drawImage(
-        avatar,
-
-        sourceX,
-        sourceY,
-        sourceSize,
-        sourceSize,
-
-        x - radius,
-        y - radius,
-        size,
-        size
-    );
-
-
-    ctx.restore();
+        return FALLBACK_AVATAR;
+    }
 }
 
+/* =========================================================
+   تحميل صورة كرابط إلى Buffer
+   ========================================================= */
+
+async function downloadBuffer(url) {
+
+    const response =
+        await axios.get(
+            url,
+            {
+                responseType:
+                    "arraybuffer",
+
+                timeout: 20000,
+
+                headers: {
+                    "User-Agent":
+                        "Mozilla/5.0"
+                }
+            }
+        );
+
+    return Buffer.from(
+        response.data
+    );
+}
 
 /* =========================================================
-   إنشاء الصورة النهائية
+   تجهيز صورة دائرية
+   ========================================================= */
+
+function makeCircularAvatar(
+    image,
+    size
+) {
+
+    const width =
+        image.bitmap.width;
+
+    const height =
+        image.bitmap.height;
+
+    const cropSize =
+        Math.min(
+            width,
+            height
+        );
+
+    const cropX =
+        Math.floor(
+            (width - cropSize) / 2
+        );
+
+    const cropY =
+        Math.floor(
+            (height - cropSize) / 2
+        );
+
+    const avatar =
+        image.clone();
+
+    avatar.crop({
+        x: cropX,
+        y: cropY,
+        w: cropSize,
+        h: cropSize
+    });
+
+    avatar.resize({
+        w: size,
+        h: size
+    });
+
+    const center =
+        size / 2;
+
+    const radius =
+        size / 2;
+
+    avatar.scan(
+        0,
+        0,
+        size,
+        size,
+        function (x, y, idx) {
+
+            const dx =
+                x + 0.5 - center;
+
+            const dy =
+                y + 0.5 - center;
+
+            const distance =
+                Math.sqrt(
+                    dx * dx +
+                    dy * dy
+                );
+
+            if (
+                distance > radius
+            ) {
+                this.bitmap.data[
+                    idx + 3
+                ] = 0;
+            }
+        }
+    );
+
+    return avatar;
+}
+
+/* =========================================================
+   إنشاء صورة البوسة
    ========================================================= */
 
 async function generateKissImage(
-    senderAvatarUrl,
-    targetAvatarUrl
+    senderURL,
+    targetURL
 ) {
-
-    if (
-        !fs.existsSync(TEMPLATE)
-    ) {
-
-        throw new Error(
-            "ملف kiss.png غير موجود بجانب الأمر."
-        );
-    }
-
 
     /*
      * تحميل القالب
      */
 
-    const baseImage =
-        await loadImage(
-            TEMPLATE
+    const baseBuffer =
+        await downloadBuffer(
+            BASE_URL
         );
 
-
     /*
-     * إنشاء Canvas بنفس أبعاد القالب
+     * تحميل صور الأشخاص
      */
 
-    const canvas =
-        createCanvas(
-            baseImage.width,
-            baseImage.height
+    const senderBuffer =
+        await downloadBuffer(
+            senderURL
         );
 
-
-    const ctx =
-        canvas.getContext("2d");
-
+    const targetBuffer =
+        await downloadBuffer(
+            targetURL
+        );
 
     /*
-     * رسم القالب
+     * تحويلها إلى Jimp
      */
 
-    ctx.drawImage(
-        baseImage,
-        0,
-        0,
-        baseImage.width,
-        baseImage.height
+    const base =
+        await Jimp.read(
+            baseBuffer
+        );
+
+    const sender =
+        await Jimp.read(
+            senderBuffer
+        );
+
+    const target =
+        await Jimp.read(
+            targetBuffer
+        );
+
+    /*
+     * حجم الصور
+     */
+
+    const imgSize = 160;
+
+    /*
+     * تجهيز الدوائر
+     */
+
+    const avatar1 =
+        makeCircularAvatar(
+            sender,
+            imgSize
+        );
+
+    const avatar2 =
+        makeCircularAvatar(
+            target,
+            imgSize
+        );
+
+    /*
+     * أبعاد القالب
+     */
+
+    const centerX =
+        base.bitmap.width / 2;
+
+    const centerY =
+        base.bitmap.height / 2;
+
+    /*
+     * مكان صاحب الأمر
+     */
+
+    const pos1 = {
+        x:
+            Math.round(
+                centerX -
+                imgSize -
+                45
+            ),
+
+        y:
+            Math.round(
+                centerY -
+                imgSize -
+                10
+            )
+    };
+
+    /*
+     * مكان المستهدف
+     */
+
+    const pos2 = {
+        x:
+            Math.round(
+                centerX + 40
+            ),
+
+        y:
+            Math.round(
+                centerY -
+                imgSize / 4
+            )
+    };
+
+    /*
+     * دمج الصور
+     */
+
+    base.composite(
+        avatar1,
+        pos1.x,
+        pos1.y
     );
 
-
-    /*
-     * تحميل صور البروفايلات
-     */
-
-    const senderAvatar =
-        await loadImage(
-            senderAvatarUrl
-        );
-
-    const targetAvatar =
-        await loadImage(
-            targetAvatarUrl
-        );
-
-
-    /*
-     * =====================================
-     * اليسار = المستهدف
-     * =====================================
-     */
-
-    await drawCircularAvatar(
-        ctx,
-        targetAvatar,
-        TARGET_AVATAR.x,
-        TARGET_AVATAR.y,
-        TARGET_AVATAR.radius
+    base.composite(
+        avatar2,
+        pos2.x,
+        pos2.y
     );
 
-
     /*
-     * =====================================
-     * اليمين = صاحب الأمر
-     * =====================================
+     * إخراج PNG
      */
 
-    await drawCircularAvatar(
-        ctx,
-        senderAvatar,
-        SENDER_AVATAR.x,
-        SENDER_AVATAR.y,
-        SENDER_AVATAR.radius
-    );
-
-
-    /*
-     * تحويل Canvas إلى Buffer
-     */
-
-    return canvas.toBuffer(
-        "image/png"
+    return await base.getBuffer(
+        "image/jpeg"
     );
 }
 
-
 /* =========================================================
-   إرسال Buffer إلى Messenger
+   إرسال الصورة
    ========================================================= */
 
 async function sendImage(
@@ -341,97 +396,116 @@ async function sendImage(
     buffer
 ) {
 
-    const stream =
-        new PassThrough();
+    const outputPath =
+        path.join(
+            CACHE_DIR,
+            `kiss_${Date.now()}.jpg`
+        );
 
-    stream.end(buffer);
+    const image =
+        await Jimp.read(buffer);
 
+    await image.write(outputPath);
 
-    return api.sendMessage(
-        {
-            attachment: stream
-        },
-        threadID
-    );
+    return new Promise((resolve, reject) => {
+
+        api.sendMessage(
+            {
+                attachment:
+                    fs.createReadStream(
+                        outputPath
+                    )
+            },
+            threadID,
+            (error, info) => {
+
+                try {
+                    fs.unlinkSync(outputPath);
+                } catch (_) {}
+
+                if (error) {
+                    return reject(error);
+                }
+
+                resolve(info);
+            }
+        );
+
+    });
 }
 
-
 /* =========================================================
-   الأمر الرئيسي
+   تشغيل الأمر
    ========================================================= */
 
-module.exports.run = async function ({
+module.exports.run =
+async function ({
     api,
-    event,
-    args
+    event
 }) {
+
+    let processing = null;
 
     try {
 
+        const {
+            senderID,
+            threadID
+        } = event;
+
         /*
-         * الحصول على المستهدف
+         * تحديد المستهدف
          */
 
         const targetID =
-            getTargetUserID(
-                event,
-                args
-            );
-
+            getTargetID(event);
 
         if (!targetID) {
 
             return api.sendMessage(
-                "💋 قم بالرد على رسالة الشخص أو منشن الشخص المستهدف.",
-                event.threadID
+                "لازم تعمل منشن أو ترد على شخص.",
+                threadID
             );
         }
 
-
         /*
-         * منع استهداف نفس الشخص
+         * منع بوسة النفس
          */
 
         if (
             String(targetID) ===
-            String(event.senderID)
+            String(senderID)
         ) {
 
             return api.sendMessage(
-                "😹 لازم تختار شخصًا آخر.",
-                event.threadID
+                "ما ينفع تستهدف نفسك.",
+                threadID
             );
         }
 
-
         /*
-         * إرسال حالة المعالجة
+         * رسالة انتظار
          */
 
-        const processing =
+        processing =
             await api.sendMessage(
-                "⏳ جاري تجهيز الصورة...",
-                event.threadID
+                "جاري تجهيز الصورة...",
+                threadID
             );
 
-
         /*
-         * صور البروفايل
+         * الحصول على الصور
          */
 
         const senderAvatar =
-            await getAvatar(
-                api,
-                event.senderID
+            await getAvatarUrl(
+                senderID
             );
-
 
         const targetAvatar =
-            await getAvatar(
-                api,
+            await getAvatarUrl(
                 targetID
             );
-
 
         /*
          * إنشاء الصورة
@@ -443,30 +517,31 @@ module.exports.run = async function ({
                 targetAvatar
             );
 
-
         /*
          * حذف رسالة الانتظار
          */
 
-        if (processing) {
+        if (
+            processing &&
+            processing.messageID
+        ) {
 
             try {
 
                 await api.unsendMessage(
-                    processing
+                    processing.messageID
                 );
 
             } catch (_) {}
         }
 
-
         /*
-         * إرسال الصورة
+         * إرسال النتيجة
          */
 
         return await sendImage(
             api,
-            event.threadID,
+            threadID,
             image
         );
 
@@ -477,10 +552,30 @@ module.exports.run = async function ({
             error
         );
 
+        /*
+         * محاولة حذف الانتظار
+         */
+
+        if (
+            processing &&
+            processing.messageID
+        ) {
+
+            try {
+
+                await api.unsendMessage(
+                    processing.messageID
+                );
+
+            } catch (_) {}
+        }
 
         return api.sendMessage(
-            "❌ حصل خطأ أثناء تجهيز الصورة.\n\n" +
-            `السبب: ${error.message || "خطأ غير معروف"}`,
+            "حصل خطأ أثناء تجهيز الصورة.\n\n" +
+            `السبب: ${
+                error.message ||
+                "خطأ غير معروف"
+            }`,
             event.threadID
         );
     }

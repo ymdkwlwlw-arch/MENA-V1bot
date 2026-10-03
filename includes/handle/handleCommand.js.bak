@@ -136,20 +136,14 @@ allCommandName,
 if (checker.bestMatch.rating >= 0.5) {
 command = commands.get(checker.bestMatch.target);
 } else {
-try {
-await new Promise((resolve) => {
-api.setMessageReaction(
-"🦧",
-messageID,
-() => resolve(),
-true
+return api.sendMessage(
+global.getText(
+"handleCommand",
+"commandNotExist",
+checker.bestMatch.target,
+),
+threadID,
 );
-});
-} catch (error) {
-console.error("[handleCommand] Reaction Error:", error.message);
-}
-
-return;
 }
 }
 }

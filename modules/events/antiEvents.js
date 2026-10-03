@@ -3,7 +3,7 @@ module.exports.config = {
 
   eventType: [
     "log:thread-name",
-    "log:thread-icon",
+    "log:thread-image",
     "log:user-nickname"
   ],
 
@@ -252,6 +252,9 @@ module.exports.run = async function ({
     const notify =
       settings.notifications === true;
 
+    console.log(
+    );
+
 
     /*
      * ==========================
@@ -301,7 +304,7 @@ module.exports.run = async function ({
 
     if (
       logMessageType ===
-      "log:thread-icon" &&
+      "log:thread-image" &&
       settings.antiImage
     ) {
 

@@ -1,0 +1,418 @@
+const axios = require("axios");
+const fs = require("fs-extra");
+const path = require("path");
+const { spawn } = require("child_process");
+
+module.exports.config = {
+    name: "اصفعي",
+    aliases: ["صفعة", "صفع", "slap"],
+    version: "3.2.0",
+    hasPermssion: 0,
+    credits: "ڪولو سآن",
+    description: "صفع العضو المحدد مع تأثير بصري",
+    commandCategory: "ترفيه",
+    usages: "اصفعي @منشن أو بالرد",
+    cooldowns: 5,
+    usePrefix: true
+};
+
+const CACHE_DIR = path.join(__dirname, "cache");
+const FFMPEG = "ffmpeg";
+
+const USER_AGENT =
+    "Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/140 Mobile Safari/537.36";
+
+/* ─────────────────────────────
+   Reaction
+───────────────────────────── */
+
+function safeReaction(api, reaction, messageID, threadID) {
+    return new Promise((resolve) => {
+        if (!api || !reaction || !messageID || !threadID) {
+            return resolve(false);
+        }
+
+        try {
+            api.setMessageReaction(
+                reaction,
+                messageID,
+                threadID,
+                () => resolve(true)
+            );
+        } catch {
+            resolve(false);
+        }
+    });
+}
+
+/* ─────────────────────────────
+   Download
+───────────────────────────── */
+
+async function downloadFile(url, output) {
+    const response = await axios({
+        method: "GET",
+        url,
+        responseType: "arraybuffer",
+        timeout: 30000,
+        maxRedirects: 10,
+        headers: {
+            "User-Agent": USER_AGENT,
+            "Accept": "*/*"
+        }
+    });
+
+    if (!response.data || !response.data.length) {
+        throw new Error("الملف المستلم فارغ.");
+    }
+
+    await fs.outputFile(output, response.data);
+
+    const stat = await fs.stat(output);
+
+    if (!stat.size) {
+        throw new Error("الملف المحمل فارغ.");
+    }
+
+    return output;
+}
+
+/* ─────────────────────────────
+   Facebook Avatar
+───────────────────────────── */
+
+async function getAvatar(uid, output) {
+    const url =
+        `https://graph.facebook.com/${uid}/picture?width=720&height=720`;
+
+    return downloadFile(url, output);
+}
+
+/* ─────────────────────────────
+   NEKOSBEST
+───────────────────────────── */
+
+async function getSlapURL() {
+    const response = await axios.get(
+        "https://nekos.best/api/v2/slap",
+        {
+            timeout: 20000,
+            headers: {
+                "User-Agent": USER_AGENT,
+                "Accept": "application/json"
+            }
+        }
+    );
+
+    const result =
+        response.data &&
+        response.data.results &&
+        response.data.results[0];
+
+    if (!result || !result.url) {
+        throw new Error("API لم يرجع رابط التأثير.");
+    }
+
+    return result.url;
+}
+
+/* ─────────────────────────────
+   FFmpeg
+───────────────────────────── */
+
+function runFFmpeg(args) {
+    return new Promise((resolve, reject) => {
+        const child = spawn(FFMPEG, args);
+
+        let stderr = "";
+
+        child.stderr.on("data", (data) => {
+            stderr += data.toString();
+        });
+
+        child.on("error", reject);
+
+        child.on("close", (code) => {
+            if (code === 0) {
+                resolve();
+            } else {
+                reject(
+                    new Error(
+                        `FFmpeg exited with code ${code}\n${stderr.slice(-4000)}`
+                    )
+                );
+            }
+        });
+    });
+}
+
+/* ─────────────────────────────
+   GIF → Middle PNG
+───────────────────────────── */
+
+async function extractEffectFrame(gifFile, pngFile) {
+    await runFFmpeg([
+        "-y",
+        "-i",
+        gifFile,
+
+        "-ss",
+        "0.7",
+
+        "-frames:v",
+        "1",
+
+        "-vf",
+        "format=rgba",
+
+        "-update",
+        "1",
+
+        pngFile
+    ]);
+
+    if (!(await fs.pathExists(pngFile))) {
+        throw new Error("لم يتم إنشاء إطار التأثير.");
+    }
+
+    const stat = await fs.stat(pngFile);
+
+    if (!stat.size) {
+        throw new Error("إطار التأثير فارغ.");
+    }
+
+    return pngFile;
+}
+
+/* ─────────────────────────────
+   Avatar + Slap
+───────────────────────────── */
+
+async function createSlap(avatar, effect, output) {
+    await runFFmpeg([
+        "-y",
+
+        "-i",
+        avatar,
+
+        "-i",
+        effect,
+
+        "-filter_complex",
+
+        "[0:v]" +
+        "scale=720:720:force_original_aspect_ratio=increase," +
+        "crop=720:720," +
+        "setsar=1," +
+        "format=rgba[base];" +
+
+        "[1:v]" +
+        "scale=720:-1:force_original_aspect_ratio=decrease," +
+        "setsar=1," +
+        "format=rgba[fx];" +
+
+        "[base][fx]" +
+        "overlay=(W-w)/2:(H-h)/2:format=auto," +
+        "format=yuv420p[out]",
+
+        "-map",
+        "[out]",
+
+        "-frames:v",
+        "1",
+
+        "-q:v",
+        "3",
+
+        "-update",
+        "1",
+
+        output
+    ]);
+
+    if (!(await fs.pathExists(output))) {
+        throw new Error("الصورة النهائية لم يتم إنشاؤها.");
+    }
+
+    const stat = await fs.stat(output);
+
+    if (!stat.size) {
+        throw new Error("الصورة النهائية فارغة.");
+    }
+
+    return output;
+}
+
+/* ─────────────────────────────
+   Target
+───────────────────────────── */
+
+function getTargetID(event) {
+    if (
+        event.messageReply &&
+        event.messageReply.senderID
+    ) {
+        return event.messageReply.senderID;
+    }
+
+    if (
+        event.mentions &&
+        Object.keys(event.mentions).length
+    ) {
+        return Object.keys(event.mentions)[0];
+    }
+
+    return null;
+}
+
+/* ─────────────────────────────
+   Command
+───────────────────────────── */
+
+module.exports.run = async function ({ api, event }) {
+    const {
+        threadID,
+        messageID
+    } = event;
+
+    const targetID = getTargetID(event);
+
+    if (!targetID) {
+        return api.sendMessage(
+            "رد على رسالة الشخص أو اعمل له منشن.",
+            threadID,
+            messageID
+        );
+    }
+
+    await fs.ensureDir(CACHE_DIR);
+
+    const stamp = `${targetID}_${Date.now()}`;
+
+    const avatarFile = path.join(
+        CACHE_DIR,
+        `slap_avatar_${stamp}.jpg`
+    );
+
+    const gifFile = path.join(
+        CACHE_DIR,
+        `slap_${stamp}.gif`
+    );
+
+    const effectFile = path.join(
+        CACHE_DIR,
+        `slap_effect_${stamp}.png`
+    );
+
+    const outputFile = path.join(
+        CACHE_DIR,
+        `slap_result_${stamp}.jpg`
+    );
+
+    try {
+
+        await safeReaction(
+            api,
+            "⏳",
+            messageID,
+            threadID
+        );
+
+        /* صورة الشخص */
+
+        await getAvatar(
+            targetID,
+            avatarFile
+        );
+
+        /* رابط تأثير الصفعة */
+
+        const effectURL = await getSlapURL();
+
+        /* تحميل التأثير */
+
+        await downloadFile(
+            effectURL,
+            gifFile
+        );
+
+        /* استخراج إطار الحركة */
+
+        await extractEffectFrame(
+            gifFile,
+            effectFile
+        );
+
+        /* تركيب النتيجة */
+
+        await createSlap(
+            avatarFile,
+            effectFile,
+            outputFile
+        );
+
+        /* نجاح */
+
+        await safeReaction(
+            api,
+            "✅",
+            messageID,
+            threadID
+        );
+
+        return api.sendMessage(
+            {
+                body:
+                    "╭─── ◸ صَفْعَة ◿ ───╮\n" +
+                    "│ تم تنفيذ الصفعة.\n" +
+                    "│ ◉ الهدف: تم تحديده\n" +
+                    "│ ◉ التأثير: تم تطبيقه\n" +
+                    "╰──────────────────╯",
+
+                attachment:
+                    fs.createReadStream(outputFile)
+            },
+
+            threadID,
+
+            () => {
+                Promise.all([
+                    fs.remove(avatarFile).catch(() => {}),
+                    fs.remove(gifFile).catch(() => {}),
+                    fs.remove(effectFile).catch(() => {}),
+                    fs.remove(outputFile).catch(() => {})
+                ]);
+            },
+
+            messageID
+        );
+
+    } catch (error) {
+
+        console.error(
+            "\n╭─── ◸ اصفعي V3.2 ERROR ◿ ───╮\n" +
+            error.stack +
+            "\n╰────────────────────────────╯"
+        );
+
+        await Promise.all([
+            fs.remove(avatarFile).catch(() => {}),
+            fs.remove(gifFile).catch(() => {}),
+            fs.remove(effectFile).catch(() => {}),
+            fs.remove(outputFile).catch(() => {})
+        ]);
+
+        await safeReaction(
+            api,
+            "❌",
+            messageID,
+            threadID
+        );
+
+        return api.sendMessage(
+            "تعذر تنفيذ تأثير الصفعة حالياً.",
+            threadID,
+            messageID
+        );
+    }
+};

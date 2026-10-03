@@ -1,10 +1,13 @@
-const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
+const { execFile } = require("child_process");
+const { promisify } = require("util");
+
+const execFileAsync = promisify(execFile);
 
 module.exports.config = {
     name: "اوامر",
-    version: "2.4.1",
+    version: "2.5.0",
     hasPermssion: 0,
     credits: "محمد إدريس",
     description: "عرض جميع أوامر البوت",
@@ -23,12 +26,12 @@ module.exports.languages = {
         moduleInfo:
             "╭─── ◸ مـعـلـومـات الأمـر ◿ ───╮\n" +
             "│\n" +
-            "│ ⟐ الاسم       ─ %1\n" +
-            "│ ⟐ الوصف      ─ %2\n" +
-            "│ ⟐ الاستخدام  ─ %3\n" +
-            "│ ⟐ الصلاحية   ─ %4\n" +
-            "│ ⟐ الانتظار   ─ %5 ثانية\n" +
-            "│ ⟐ المطور     ─ %6\n" +
+            "│ ◇ الاسـم      ─ %1\n" +
+            "│ ◇ الـوصـف     ─ %2\n" +
+            "│ ◇ الاسـتـخـدام ─ %3\n" +
+            "│ ◇ الـصـلاحـيـة ─ %4\n" +
+            "│ ◇ الانـتـظـار  ─ %5 ثـانـيـة\n" +
+            "│ ◇ الـمـطـور    ─ %6\n" +
             "│\n" +
             "╰──────────────────────────╯",
 
@@ -117,9 +120,7 @@ module.exports.run = async function ({
             "moduleInfo",
             command.config.name,
             command.config.description || "بدون وصف",
-            `${prefix}${command.config.name} ${
-                command.config.usages || ""
-            }`,
+            `${prefix}${command.config.name} ${command.config.usages || ""}`,
             permissionName,
             command.config.cooldowns || 0,
             command.config.credits || "غير معروف"
@@ -240,21 +241,21 @@ module.exports.run = async function ({
     const body =
 `╭─── ◸ نـظـام الـبـوت ◿ ───╮
 │
-│ ⌁ الـتـاريـخ  ─ ${date}
-│ ⌁ الـيـوم     ─ ${day}
-│ ⌁ الـوقـت     ─ ${time}
+│ ◸ الـتـاريـخ  ─ ${date}
+│ ◸ الـيـوم     ─ ${day}
+│ ◸ الـوقـت     ─ ${time}
 │
 ╰──────────────────────────╯
 
 ╭─── ◸ قـائـمـة الأوامـر ◿ ───╮
 │
-│ ⟐ قـائـمـة الأوامـر الـعـامـة
+│ ◇ الأوامـر الـعـامـة 〔${generalCommands.length}〕
 │
 ${formatCommands(generalCommands)}
 │
-│ ───────────────────────
+│ ╰─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ╯
 │
-│ ⟐ قـائـمـة أوامـر الـمـطـور
+│ ◇ أوامـر الـمـطـور 〔${developerCommands.length}〕
 │
 ${formatCommands(developerCommands)}
 │
@@ -262,14 +263,10 @@ ${formatCommands(developerCommands)}
 
 ╭─── ◸ مـعـلـومـات الـبـوت ◿ ───╮
 │
-│ ⟐ إجـمـالـي الأوامـر  ─ ${allCommands.length}
-│ ⟐ الأوامـر الـعـامـة    ─ ${generalCommands.length}
-│ ⟐ أوامـر الـمـطـور     ─ ${developerCommands.length}
-│ ⟐ حـالـة الـنـظـام     ─ متصل ✓
-│ ⟐ الـمـطـور            ─ ڪولو سآن
+│ ◇ المـالك  ─ ڪولو سان
+│ ◇ اسـم الـبـوت  ─ لينا
 │
-│ ⊸ لـمـعـرفـة الـتـفـاصـيـل:
-│   ${prefix}اوامر اسم_الأمر
+│ ⊸ استخدم ${prefix}اوامر لعرض التفاصيل
 │
 ╰──────────────────────────╯
 
@@ -296,9 +293,8 @@ ${formatCommands(developerCommands)}
         );
 
     try {
-
         /*
-         * إنشاء cache إذا لم يكن موجودًا
+         * إنشاء cache
          */
 
         if (!fs.existsSync(cacheDir)) {
@@ -311,42 +307,52 @@ ${formatCommands(developerCommands)}
         }
 
         /*
-         * تحميل الصورة كـ Buffer
+         * تحميل الصورة بواسطة curl
+         * لأن Axios مع Imgur يرجع 429
          */
 
-        const response =
-            await axios.get(
-                imageUrl,
-                {
-                    responseType: "arraybuffer",
-                    timeout: 15000,
-                    maxContentLength: 15 * 1024 * 1024
-                }
+        await execFileAsync(
+            "curl",
+            [
+                "-L",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--max-time",
+                "20",
+                "-A",
+                "Mozilla/5.0",
+                "-o",
+                tempFile,
+                imageUrl
+            ],
+            {
+                timeout: 25000
+            }
+        );
+
+        /*
+         * التأكد من تحميل الصورة
+         */
+
+        if (
+            !fs.existsSync(tempFile) ||
+            fs.statSync(tempFile).size < 1000
+        ) {
+            throw new Error(
+                "فشل تحميل صورة قائمة الأوامر"
             );
-
-        fs.writeFileSync(
-            tempFile,
-            Buffer.from(response.data)
-        );
+        }
 
         /*
-         * طريقة BotPack الأصلية:
-         * وضع الصورة داخل Array
-         */
-
-        const imgP = [];
-
-        imgP.push(
-            fs.createReadStream(tempFile)
-        );
-
-        /*
-         * النص + الصورة في رسالة واحدة
+         * إرسال الصورة مع القائمة
          */
 
         const msgg = {
             body: body,
-            attachment: imgP
+            attachment: [
+                fs.createReadStream(tempFile)
+            ]
         };
 
         const sentMessage =
@@ -357,7 +363,7 @@ ${formatCommands(developerCommands)}
             );
 
         /*
-         * حذف الملف المؤقت بعد الإرسال
+         * حذف الملف المؤقت
          */
 
         setTimeout(() => {
@@ -374,11 +380,11 @@ ${formatCommands(developerCommands)}
         }, 5000);
 
         /*
-         * الحذف التلقائي للرسالة
+         * الحذف التلقائي
          */
 
         const configModule =
-            global.configModule?.[this.config.name] || {};
+            global.configModule?.["اوامر"] || {};
 
         const autoUnsend =
             configModule.autoUnsend !== false;
@@ -412,9 +418,8 @@ ${formatCommands(developerCommands)}
         return sentMessage;
 
     } catch (error) {
-
         /*
-         * تنظيف الملف إذا حدث خطأ
+         * تنظيف الملف عند الخطأ
          */
 
         try {
@@ -434,12 +439,10 @@ ${formatCommands(developerCommands)}
         );
 
         /*
-         * إذا فشل تحميل الصورة،
          * إرسال القائمة بدون صورة
          */
 
         try {
-
             const sentMessage =
                 await api.sendMessage(
                     body,
@@ -447,45 +450,12 @@ ${formatCommands(developerCommands)}
                     messageID
                 );
 
-            const configModule =
-                global.configModule?.[this.config.name] || {};
-
-            const autoUnsend =
-                configModule.autoUnsend !== false;
-
-            const delayUnsend =
-                Number(
-                    configModule.delayUnsend
-                ) || 60;
-
-            if (
-                autoUnsend &&
-                sentMessage?.messageID
-            ) {
-                setTimeout(
-                    async () => {
-                        try {
-                            await api.unsendMessage(
-                                sentMessage.messageID
-                            );
-                        } catch (err) {
-                            console.error(
-                                "[اوامر] Auto-unsend:",
-                                err.message
-                            );
-                        }
-                    },
-                    delayUnsend * 1000
-                );
-            }
-
             return sentMessage;
 
         } catch (sendError) {
-
             console.error(
                 "[اوامر] Error:",
-                sendError
+                sendError.message
             );
 
             return api.sendMessage(

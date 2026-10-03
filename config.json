@@ -82,5 +82,12 @@
     "menu": {
         "autoUnsend": true,
         "delayUnsend": 60
+    },
+    "اوامر": {
+        "autoUnsend": true,
+        "delayUnsend": 60
+    },
+    "فيديو": {
+        "YOUTUBE_API": ""
     }
 }
