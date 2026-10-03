@@ -1,62 +1,41 @@
-module.exports.config = {
-    name: "اصفعي",
-    version: "4.1.0",
-    hasPermssion: 0,
-    credits: "محمد إدريس",
-    description: "تصفع عضوًا بالتاغ أو بالرد على رسالته",
-    usePrefix: true,
-    commandCategory: "الترفيه",
-    usages: "اصفعي @الشخص أو بالرد على رسالته",
-    cooldowns: 5,
-
-    dependencies: {
-        axios: "",
-        "fs-extra": "",
-        path: "",
-        jimp: ""
-    }
-};
-
-
 const axios = require("axios");
 const fs = require("fs-extra");
 const path = require("path");
 const Jimp = require("jimp");
 
-
-/* ╭─── ◸ إعـدادات الـنـظـام ◿ ───╮ */
+module.exports.config = {
+    name: "اصفعي",
+    version: "4.0.0",
+    hasPermssion: 0,
+    credits: "محمد إدريس",
+    description: "تنفيذ أمر اصفعي بالتاغ أو بالرد",
+    commandCategory: "الترفيه",
+    usages: "اصفعي @الشخص",
+    cooldowns: 5
+};
 
 const CACHE_DIR = path.join(
     __dirname,
-    "cache",
-    "canvas"
+    "cache"
 );
 
-const BASE_IMAGE = path.join(
-    CACHE_DIR,
-    "sato.png"
-);
+const BASE_IMAGE =
+    path.join(
+        CACHE_DIR,
+        "اصفعي_base.jpg"
+    );
 
 const BASE_IMAGE_URL =
     "https://i.imgur.com/dsrmtlg.jpg";
 
 
-/* ╭─── ◸ تـجـهـيـز الـكـاش ◿ ───╮ */
-
 module.exports.onLoad = async function () {
-
     try {
-
         await fs.ensureDir(
             CACHE_DIR
         );
 
-        if (
-            !fs.existsSync(
-                BASE_IMAGE
-            )
-        ) {
-
+        if (!fs.existsSync(BASE_IMAGE)) {
             const response =
                 await axios.get(
                     BASE_IMAGE_URL,
@@ -74,24 +53,19 @@ module.exports.onLoad = async function () {
                 )
             );
         }
-
     } catch (error) {
-
         console.error(
-            "[اصفعي] onLoad Error:",
+            "[اصفعي] onLoad:",
             error
         );
     }
 };
 
 
-/* ╭─── ◸ تـحـمـيـل صـورة الـعـضـو ◿ ───╮ */
-
 async function downloadAvatar(
     userID,
     filePath
 ) {
-
     const response =
         await axios.get(
             `https://graph.facebook.com/${userID}/picture`,
@@ -100,12 +74,9 @@ async function downloadAvatar(
                     width: 512,
                     height: 512
                 },
-
                 responseType:
                     "arraybuffer",
-
                 timeout: 30000,
-
                 maxRedirects: 5
             }
         );
@@ -119,15 +90,12 @@ async function downloadAvatar(
 }
 
 
-/* ╭─── ◸ تـحـويـل الـصـورة ◿ ───╮ */
-
-async function makeCircle(
-    imagePath
+async function createCircle(
+    filePath
 ) {
-
     const image =
         await Jimp.read(
-            imagePath
+            filePath
         );
 
     image.circle();
@@ -136,174 +104,116 @@ async function makeCircle(
 }
 
 
-/* ╭─── ◸ صـنـاعـة الـصـورة ◿ ───╮ */
-
-async function makeImage({
+async function createImage({
     senderID,
     targetID
 }) {
-
     await fs.ensureDir(
         CACHE_DIR
     );
 
-    const senderAvatar =
+    const senderFile =
         path.join(
             CACHE_DIR,
-            `sender_${senderID}.png`
+            `sender_${senderID}_${Date.now()}.png`
         );
 
-    const targetAvatar =
+    const targetFile =
         path.join(
             CACHE_DIR,
-            `target_${targetID}.png`
+            `target_${targetID}_${Date.now()}.png`
         );
 
-    const output =
+    const outputFile =
         path.join(
             CACHE_DIR,
-            `اصفعي_${senderID}_${targetID}_${Date.now()}.png`
+            `اصفعي_${Date.now()}.png`
         );
-
 
     try {
-
-        /*
-         * تحميل صورة المرسل
-         */
-
         await downloadAvatar(
             senderID,
-            senderAvatar
+            senderFile
         );
-
-
-        /*
-         * تحميل صورة المستهدف
-         */
 
         await downloadAvatar(
             targetID,
-            targetAvatar
+            targetFile
         );
-
-
-        /*
-         * الصورة الأساسية
-         */
 
         const background =
             await Jimp.read(
                 BASE_IMAGE
             );
 
-
-        /*
-         * الصور الدائرية
-         */
-
-        const first =
-            await makeCircle(
-                senderAvatar
+        const senderImage =
+            await createCircle(
+                senderFile
             );
 
-        const second =
-            await makeCircle(
-                targetAvatar
+        const targetImage =
+            await createCircle(
+                targetFile
             );
 
-
-        /*
-         * تغيير الحجم
-         */
-
-        first.resize(
+        senderImage.resize(
             150,
             150
         );
 
-        second.resize(
+        targetImage.resize(
             150,
             150
         );
-
-
-        /*
-         * تركيب الصور
-         */
 
         background.composite(
-            first,
+            senderImage,
             80,
             190
         );
 
         background.composite(
-            second,
+            targetImage,
             260,
             80
         );
 
-
-        /*
-         * حفظ الصورة النهائية
-         */
-
         await background.writeAsync(
-            output
+            outputFile
         );
 
-
-        return output;
+        return outputFile;
 
     } finally {
-
-        /*
-         * تنظيف صور الأعضاء المؤقتة
-         */
-
         try {
-
             if (
                 fs.existsSync(
-                    senderAvatar
+                    senderFile
                 )
             ) {
-
                 await fs.remove(
-                    senderAvatar
+                    senderFile
                 );
             }
 
             if (
                 fs.existsSync(
-                    targetAvatar
+                    targetFile
                 )
             ) {
-
                 await fs.remove(
-                    targetAvatar
+                    targetFile
                 );
             }
-
-        } catch (error) {
-
-            console.error(
-                "[اصفعي] Avatar Cleanup:",
-                error
-            );
-        }
+        } catch {}
     }
 }
 
-
-/* ╭─── ◸ تـنـفـيـذ الأمـر ◿ ───╮ */
 
 module.exports.run = async function ({
     api,
     event
 }) {
-
     const {
         threadID,
         messageID,
@@ -312,48 +222,31 @@ module.exports.run = async function ({
         messageReply
     } = event;
 
-
-    /*
-     * ==========================================
-     * تحديد الشخص المستهدف
-     *
-     * الأولوية:
-     * 1 - الرد
-     * 2 - التاغ
-     * ==========================================
-     */
-
     let targetID = null;
 
-
     /*
-     * الرد على رسالة
+     * الأولوية للرد
      */
 
     if (
         messageReply &&
         messageReply.senderID
     ) {
-
         targetID =
             String(
                 messageReply.senderID
             );
     }
 
-
     /*
-     * التاغ
+     * ثم التاغ
      */
 
     else if (
         mentions &&
         typeof mentions === "object" &&
-        Object.keys(
-            mentions
-        ).length > 0
+        Object.keys(mentions).length > 0
     ) {
-
         targetID =
             String(
                 Object.keys(
@@ -362,15 +255,7 @@ module.exports.run = async function ({
             );
     }
 
-
-    /*
-     * ==========================================
-     * لا يوجد شخص مستهدف
-     * ==========================================
-     */
-
     if (!targetID) {
-
         return api.sendMessage(
             "قم بعمل تاغ للشخص أو استخدم الأمر بالرد على رسالته.",
             threadID,
@@ -379,18 +264,10 @@ module.exports.run = async function ({
         );
     }
 
-
-    /*
-     * ==========================================
-     * منع ضرب النفس
-     * ==========================================
-     */
-
     if (
         String(targetID) ===
         String(senderID)
     ) {
-
         return api.sendMessage(
             "ما تقدر تستخدم الأمر على نفسك.",
             threadID,
@@ -399,138 +276,73 @@ module.exports.run = async function ({
         );
     }
 
-
     let imagePath = null;
 
-
     try {
-
-        /*
-         * ==========================================
-         * إنشاء الصورة
-         * ==========================================
-         */
-
         imagePath =
-            await makeImage({
+            await createImage({
                 senderID,
                 targetID
             });
 
-
-        /*
-         * ==========================================
-         * رسالة النتيجة
-         * ==========================================
-         */
-
         const body =
-            "╭─── ◸ اصـفـعـي ◿ ───╮\n" +
+            "╭─── ◸ •-• ◿ ───╮\n" +
             "│\n" +
             "│  ◉ تـم تـنـفـيـذ الـعـمـلـيـة\n" +
             "│\n" +
             "╰──────────────────╯";
 
-
-        /*
-         * ==========================================
-         * إرسال المرفق
-         *
-         * مهم:
-         * callback هو الوسيط الثالث
-         * messageID هو الوسيط الرابع
-         * ==========================================
-         */
-
         return api.sendMessage(
             {
                 body: body,
-
                 attachment:
                     fs.createReadStream(
                         imagePath
                     )
             },
-
             threadID,
-
             (error) => {
-
-                /*
-                 * حذف الصورة بعد الإرسال
-                 */
-
                 try {
-
                     if (
                         imagePath &&
                         fs.existsSync(
                             imagePath
                         )
                     ) {
-
                         fs.unlinkSync(
                             imagePath
                         );
                     }
-
-                } catch (cleanupError) {
-
-                    console.error(
-                        "[اصفعي] Send Cleanup:",
-                        cleanupError
-                    );
-                }
-
+                } catch {}
 
                 if (error) {
-
                     console.error(
                         "[اصفعي] Send Error:",
                         error
                     );
                 }
             },
-
             messageID
         );
 
     } catch (error) {
-
         console.error(
             "[اصفعي] Error:",
             error
         );
 
-
-        /*
-         * ==========================================
-         * تنظيف الملف في حالة الخطأ
-         * ==========================================
-         */
-
         try {
-
             if (
                 imagePath &&
                 fs.existsSync(
                     imagePath
                 )
             ) {
-
                 fs.unlinkSync(
                     imagePath
                 );
             }
-
         } catch {}
-
-
-        /*
-         * ==========================================
-         * رسالة الخطأ
-         * ==========================================
-         */
 
         return api.sendMessage(
             "تعذر تنفيذ الأمر حاليًا، حاول مرة أخرى.",
