@@ -1,569 +1,267 @@
-module.exports.config = {
-    name: "تحميل",
-    version: "2.1.0",
-    hasPermssion: 0,
-    credits: "محمد إدريس",
-    description: "تحميل الفيديوهات من الروابط المدعومة",
-    usePrefix: true,
-    commandCategory: "الخدمات",
-    usages: "تحميل <الرابط>",
-    cooldowns: 5
-};
-
 const axios = require("axios");
 const fs = require("fs-extra");
 const path = require("path");
 const { alldown } = require("rx-dawonload");
 
+module.exports.config = {
+    name: "تحميل",
+    version: "2.1.0",
+    hasPermssion: 0,
+    credits: "محمد إدريس",
+    description: "تحميل فيديو من الرابط",
+    commandCategory: "الخدمات",
+    usages: "تحميل <الرابط>",
+    cooldowns: 5
+};
+
 const CACHE_DIR = path.join(__dirname, "cache");
-const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
-
-/* ╭─── ◸ أدوات النظام ◿ ───╮ */
-
-function ensureCache() {
-    if (!fs.existsSync(CACHE_DIR)) {
-        fs.ensureDirSync(CACHE_DIR);
-    }
+async function ensureCache() {
+    await fs.ensureDir(CACHE_DIR);
 }
-
 
 function getPlatform(url) {
+    if (/youtube\.com|youtu\.be/i.test(url)) return "YouTube";
+    if (/tiktok\.com/i.test(url)) return "TikTok";
+    if (/instagram\.com/i.test(url)) return "Instagram";
+    if (/facebook\.com|fb\.watch/i.test(url)) return "Facebook";
+    return "Media";
+}
 
-    const value = String(url).toLowerCase();
-
-    if (
-        value.includes("youtube.com") ||
-        value.includes("youtu.be")
-    ) {
-        return {
-            name: "YouTube",
-            reaction: "🔴"
-        };
-    }
-
-    if (value.includes("tiktok.com")) {
-        return {
-            name: "TikTok",
-            reaction: "⚫"
-        };
-    }
-
-    if (value.includes("instagram.com")) {
-        return {
-            name: "Instagram",
-            reaction: "🟣"
-        };
-    }
-
-    if (
-        value.includes("facebook.com") ||
-        value.includes("fb.watch")
-    ) {
-        return {
-            name: "Facebook",
-            reaction: "🔵"
-        };
-    }
-
-    return {
-        name: "غير معروف",
-        reaction: "⚪"
+function getReaction(platform) {
+    const reactions = {
+        YouTube: "🔴",
+        TikTok: "⚫",
+        Instagram: "🟣",
+        Facebook: "🔵",
+        Media: "⚪"
     };
+
+    return reactions[platform] || "⚪";
 }
-
-
-function isValidUrl(value) {
-
-    try {
-
-        const url = new URL(value);
-
-        return (
-            url.protocol === "http:" ||
-            url.protocol === "https:"
-        );
-
-    } catch {
-
-        return false;
-    }
-}
-
-
-function cleanTitle(title) {
-
-    return String(title || "بدون عنوان")
-        .replace(/\s+/g, " ")
-        .trim()
-        .slice(0, 150);
-}
-
-
-function formatSize(bytes) {
-
-    if (!bytes) return "غير معروف";
-
-    const mb =
-        bytes / (1024 * 1024);
-
-    return `${mb.toFixed(1)} MB`;
-}
-
-
-function react(api, emoji, messageID) {
-
-    try {
-
-        api.setMessageReaction(
-            emoji,
-            messageID,
-            () => {},
-            true
-        );
-
-    } catch {}
-}
-
-
-/* ╭─── ◸ الـتـنـفـيـذ ◿ ───╮ */
 
 module.exports.run = async function ({
     api,
     event,
     args
 }) {
-
     const {
         threadID,
-        messageID
+        messageID,
+        body
     } = event;
 
+    let url = args && args.length
+        ? args.join(" ").trim()
+        : "";
 
-    /*
-     * الرابط
-     */
-
-    const content =
-        Array.isArray(args)
-            ? args.join(" ").trim()
-            : "";
-
-
-    if (!content) {
-
-        return api.sendMessage(
-            "يرجى وضع الرابط بعد كلمة تحميل.\nمثال: تحميل https://example.com/video",
-            threadID,
-            messageID
-        );
-    }
-
-
-    /*
-     * استخراج الرابط
-     */
-
-    const urlMatch =
-        content.match(
+    if (!url && body) {
+        const match = body.match(
             /https?:\/\/[^\s]+/i
         );
 
+        if (match) {
+            url = match[0];
+        }
+    }
 
-    if (!urlMatch) {
-
+    if (!url) {
         return api.sendMessage(
-            "الرابط غير صالح أو غير موجود.",
+            "استخدم الأمر بهذا الشكل:\nتحميل <الرابط>",
             threadID,
+            () => {},
             messageID
         );
     }
 
-
-    const url =
-        urlMatch[0]
-            .replace(/[)\]}>,"'،]+$/g, "");
-
-
-    if (!isValidUrl(url)) {
-
+    if (!/^https?:\/\/\S+$/i.test(url)) {
         return api.sendMessage(
             "الرابط غير صالح.",
             threadID,
+            () => {},
             messageID
         );
     }
 
-
-    const platform =
-        getPlatform(url);
-
-
-    const requestId =
-        String(messageID || Date.now())
-            .replace(
-                /[^a-zA-Z0-9_-]/g,
-                ""
-            )
-            .slice(-30);
-
+    const platform = getPlatform(url);
+    const reaction = getReaction(platform);
 
     let filePath = null;
 
-
     try {
+        await ensureCache();
 
-        ensureCache();
-
-
-        /*
-         * ╭─◸ التفاعل مع المنصة ◿─╮
-         */
-
-        react(
-            api,
-            platform.reaction,
-            messageID
-        );
-
-
-        /*
-         * استخراج الفيديو
-         */
-
-        const data =
-            await alldown(url);
-
-
-        if (
-            !data ||
-            !data.url
-        ) {
-
-            react(
-                api,
-                "❌",
-                messageID
+        try {
+            await api.setMessageReaction(
+                reaction,
+                messageID,
+                () => {},
+                true
             );
+        } catch {}
+
+        let result;
+
+        try {
+            result = await alldown(url);
+        } catch (error) {
+            console.error("[تحميل] API Error:", error);
 
             return api.sendMessage(
-                "تعذر استخراج الفيديو من الرابط.\nتأكد أن الرابط عام وغير خاص.",
+                "تعذر الحصول على رابط التحميل.",
                 threadID,
+                () => {},
                 messageID
             );
         }
 
+        if (!result) {
+            return api.sendMessage(
+                "لم يتم العثور على ملف قابل للتحميل.",
+                threadID,
+                () => {},
+                messageID
+            );
+        }
+
+        const downloadURL =
+            result.url ||
+            result.download ||
+            result.downloadUrl ||
+            result.video ||
+            result.link;
+
+        if (!downloadURL) {
+            return api.sendMessage(
+                "لم يتم العثور على رابط مباشر للملف.",
+                threadID,
+                () => {},
+                messageID
+            );
+        }
 
         const title =
-            cleanTitle(data.title);
+            result.title ||
+            result.name ||
+            "ملف بدون عنوان";
 
+        const safeName =
+            `${Date.now()}_${Math.floor(Math.random() * 99999)}.mp4`;
 
-        const videoUrl =
-            data.url;
-
-
-        /*
-         * التفاعل أثناء التحميل
-         */
-
-        react(
-            api,
-            "⬇️",
-            messageID
+        filePath = path.join(
+            CACHE_DIR,
+            safeName
         );
 
+        await api.setMessageReaction(
+            "⬇️",
+            messageID,
+            () => {},
+            true
+        ).catch(() => {});
 
-        filePath =
-            path.join(
-                CACHE_DIR,
-                `${requestId}.mp4`
-            );
-
-
-        /*
-         * تنزيل Stream
-         */
-
-        const response =
-            await axios({
-                method: "GET",
-                url: videoUrl,
+        const response = await axios.get(
+            downloadURL,
+            {
                 responseType: "stream",
                 timeout: 120000,
-                maxRedirects: 5
-            });
-
-
-        const contentLength =
-            Number(
-                response.headers[
-                    "content-length"
-                ] || 0
-            );
-
-
-        if (
-            contentLength &&
-            contentLength > MAX_FILE_SIZE
-        ) {
-
-            react(
-                api,
-                "❌",
-                messageID
-            );
-
-            return api.sendMessage(
-                `حجم الفيديو كبير جدًا.\nالحد المسموح: ${formatSize(MAX_FILE_SIZE)}`,
-                threadID,
-                messageID
-            );
-        }
-
-
-        const writer =
-            fs.createWriteStream(
-                filePath
-            );
-
-
-        let downloaded = 0;
-
-
-        response.data.on(
-            "data",
-            chunk => {
-
-                downloaded +=
-                    chunk.length;
-
-
-                if (
-                    downloaded >
-                    MAX_FILE_SIZE
-                ) {
-
-                    response.data.destroy(
-                        new Error(
-                            "FILE_TOO_LARGE"
-                        )
-                    );
-                }
+                maxContentLength: 50 * 1024 * 1024,
+                maxBodyLength: 50 * 1024 * 1024
             }
         );
 
+        await new Promise((resolve, reject) => {
+            const writer =
+                fs.createWriteStream(filePath);
 
-        response.data.pipe(writer);
+            response.data.pipe(writer);
 
+            writer.on("finish", resolve);
+            writer.on("error", reject);
 
-        await new Promise(
-            (resolve, reject) => {
-
-                writer.on(
-                    "finish",
-                    resolve
-                );
-
-                writer.on(
-                    "error",
-                    reject
-                );
-
-                response.data.on(
-                    "error",
-                    reject
-                );
-            }
-        );
-
+            response.data.on(
+                "error",
+                reject
+            );
+        });
 
         if (
-            !fs.existsSync(filePath)
+            !fs.existsSync(filePath) ||
+            fs.statSync(filePath).size === 0
         ) {
-
             throw new Error(
-                "FILE_NOT_FOUND"
+                "Downloaded file is empty"
             );
         }
 
+        const size =
+            fs.statSync(filePath).size;
 
-        const fileSize =
-            fs.statSync(
-                filePath
-            ).size;
+        const sizeMB =
+            (size / 1024 / 1024).toFixed(2);
 
+        const bodyMessage =
+            "╭─── ◸ " + platform + " ◿ ───╮\n" +
+            "│\n" +
+            "│  ◉ " + title + "\n" +
+            "│\n" +
+            "│  ╭─ معلومات الملف\n" +
+            "│  │  " + sizeMB + " MB\n" +
+            "│  ╰────────────\n" +
+            "│\n" +
+            "╰────────────────────────╯";
 
-        /*
-         * ╭─── ◸ النتيجة ◿ ───╮
-         */
-
-        const body =
-            `╭─── ◸ ${platform.name} ◿ ───╮\n` +
-            `│\n` +
-            `│  ◉ ${title}\n` +
-            `│\n` +
-            `│  ╭─ معلومات الملف\n` +
-            `│  │  ${formatSize(fileSize)}\n` +
-            `│  ╰────────────\n` +
-            `│\n` +
-            `╰────────────────────────╯`;
-
-
-        /*
-         * إرسال الفيديو
-         */
-
-        api.sendMessage(
+        return api.sendMessage(
             {
-                body,
-
+                body: bodyMessage,
                 attachment:
-                    fs.createReadStream(
-                        filePath
-                    )
+                    fs.createReadStream(filePath)
             },
-
             threadID,
-
             (error) => {
-
-                /*
-                 * حذف الملف
-                 */
-
                 try {
-
                     if (
                         filePath &&
-                        fs.existsSync(
-                            filePath
-                        )
+                        fs.existsSync(filePath)
                     ) {
-
-                        fs.unlinkSync(
-                            filePath
-                        );
+                        fs.unlinkSync(filePath);
                     }
-
                 } catch (cleanupError) {
-
                     console.error(
                         "[تحميل] Cleanup:",
                         cleanupError
                     );
                 }
 
-
                 if (error) {
-
                     console.error(
-                        "[تحميل] Send:",
+                        "[تحميل] Send Error:",
                         error
                     );
-
-                    react(
-                        api,
-                        "❌",
-                        messageID
-                    );
-
-                    return;
                 }
-
-
-                react(
-                    api,
-                    platform.reaction,
-                    messageID
-                );
             },
-
             messageID
         );
 
-
     } catch (error) {
-
         console.error(
-            "[تحميل]",
+            "[تحميل] Error:",
             error
         );
 
-
-        /*
-         * تنظيف الملف
-         */
-
         try {
-
             if (
                 filePath &&
-                fs.existsSync(
-                    filePath
-                )
+                fs.existsSync(filePath)
             ) {
-
-                fs.unlinkSync(
-                    filePath
-                );
+                fs.unlinkSync(filePath);
             }
-
         } catch {}
 
-
-        react(
-            api,
-            "❌",
-            messageID
-        );
-
-
-        /*
-         * رسائل الخطأ بدون استايل
-         */
-
-        if (
-            error?.message ===
-            "FILE_TOO_LARGE"
-        ) {
-
-            return api.sendMessage(
-                "حجم الفيديو أكبر من الحد المسموح به.",
-                threadID,
-                messageID
-            );
-        }
-
-
-        if (
-            error?.code ===
-            "ECONNABORTED"
-        ) {
-
-            return api.sendMessage(
-                "انتهت مهلة التحميل، حاول مرة أخرى.",
-                threadID,
-                messageID
-            );
-        }
-
-
-        if (
-            error?.response?.status === 403 ||
-            error?.response?.status === 401
-        ) {
-
-            return api.sendMessage(
-                "تعذر الوصول إلى رابط الفيديو.",
-                threadID,
-                messageID
-            );
-        }
-
-
         return api.sendMessage(
-            "حدث خطأ أثناء تحميل الفيديو، حاول مرة أخرى.",
+            "تعذر تحميل الملف حاليًا، حاول مرة أخرى.",
             threadID,
+            () => {},
             messageID
         );
     }
