@@ -19,16 +19,16 @@ module.exports.config = {
     cooldowns: 10
 };
 
-/* ╭────────────────────────────────────╮
-   │ أدوات النظام
-   ╰────────────────────────────────────╯ */
-
 async function ensureCache() {
-    await fsp.mkdir(CACHE_DIR, { recursive: true });
+    await fsp.mkdir(CACHE_DIR, {
+        recursive: true
+    });
 }
 
 function formatBytes(bytes) {
-    if (!bytes || bytes <= 0) return "غير معروف";
+    if (!bytes || bytes <= 0) {
+        return "غير معروف";
+    }
 
     const units = ["B", "KB", "MB", "GB"];
     let size = bytes;
@@ -110,24 +110,27 @@ function cleanUrl(value) {
 function isUrl(value) {
     try {
         const url = new URL(value);
-        return ["http:", "https:"].includes(url.protocol);
+
+        return [
+            "http:",
+            "https:"
+        ].includes(url.protocol);
+
     } catch {
         return false;
     }
 }
 
 function cleanTitle(title) {
-    if (!title) return "";
+    if (!title) {
+        return "";
+    }
 
     return String(title)
         .replace(/\s+/g, " ")
         .trim()
         .slice(0, 60);
 }
-
-/* ╭────────────────────────────────────╮
-   │ واجهة الرسائل
-   ╰────────────────────────────────────╯ */
 
 function startMessage(platform, mode, quality) {
     return [
@@ -158,13 +161,7 @@ function loadingMessage(platform, mode, quality) {
     ].join("\n");
 }
 
-function successMessage(
-    platform,
-    mode,
-    quality,
-    size,
-    title
-) {
+function successMessage(platform, mode, quality, size, title) {
     const lines = [
         "╭─── ◸ تـم الـتـحـمـيـل ◿ ───╮",
         "│",
@@ -199,13 +196,8 @@ function errorMessage(message) {
     ].join("\n");
 }
 
-/* ╭────────────────────────────────────╮
-   │ تشغيل yt-dlp
-   ╰────────────────────────────────────╯ */
-
 function runYtDlp(args) {
     return new Promise((resolve, reject) => {
-
         const child = spawn(
             "yt-dlp",
             args,
@@ -218,101 +210,49 @@ function runYtDlp(args) {
         let stdout = "";
         let stderr = "";
 
-        child.stdout.on(
-            "data",
-            data => {
-                stdout += data.toString();
+        child.stdout.on("data", data => {
+            stdout += data.toString();
+        });
+
+        child.stderr.on("data", data => {
+            stderr += data.toString();
+        });
+
+        child.on("error", error => {
+            reject(error);
+        });
+
+        child.on("close", code => {
+            if (code === 0) {
+                resolve({
+                    stdout,
+                    stderr,
+                    code
+                });
+                return;
             }
-        );
 
-        child.stderr.on(
-            "data",
-            data => {
-                stderr += data.toString();
-            }
-        );
+            const error = new Error(
+                stderr ||
+                stdout ||
+                `yt-dlp exited with code ${code}`
+            );
 
-        child.on(
-            "error",
-            error => {
-                reject(error);
-            }
-        );
-
-        child.on(
-            "close",
-            code => {
-
-                if (code === 0) {
-
-                    resolve({
-                        stdout,
-                        stderr,
-                        code
-                    });
-
-                } else {
-
-                    const error =
-                        new Error(
-                            stderr ||
-                            stdout ||
-                            `yt-dlp exited with code ${code}`
-                        );
-
-                    error.code = code;
-
-                    reject(error);
-                }
-            }
-        );
+            error.code = code;
+            reject(error);
+        });
     });
 }
 
-/* ╭────────────────────────────────────╮
-   │ استخراج الملف الناتج
-   ╰────────────────────────────────────╯ */
-
 async function findDownloadedFile(baseName) {
+    const files = await fsp.readdir(CACHE_DIR);
 
-    const files =
-        await fsp.readdir(
-            CACHE_DIR
-        );
-
-    const candidates =
-        files
-            .filter(
-                file =>
-                    file.startsWith(
-                        baseName
-                    )
-            )
-            .filter(
-                file =>
-                    !file.endsWith(
-                        ".part"
-                    )
-            )
-            .filter(
-                file =>
-                    !file.endsWith(
-                        ".ytdl"
-                    )
-            )
-            .filter(
-                file =>
-                    !file.endsWith(
-                        ".temp"
-                    )
-            )
-            .map(
-                file =>
-                    path.join(
-                        CACHE_DIR,
-                        file
-                    )
-            );
+    const candidates = files
+        .filter(file => file.startsWith(baseName))
+        .filter(file => !file.endsWith(".part"))
+        .filter(file => !file.endsWith(".ytdl"))
+        .filter(file => !file.endsWith(".temp"))
+        .map(file => path.join(CACHE_DIR, file));
 
     if (!candidates.length) {
         return null;
@@ -321,26 +261,16 @@ async function findDownloadedFile(baseName) {
     let best = null;
     let bestSize = -1;
 
-    for (
-        const file
-        of candidates
-    ) {
-
+    for (const file of candidates) {
         try {
-
-            const stat =
-                await fsp.stat(file);
+            const stat = await fsp.stat(file);
 
             if (
                 stat.isFile() &&
                 stat.size > bestSize
             ) {
-
-                best =
-                    file;
-
-                bestSize =
-                    stat.size;
+                best = file;
+                bestSize = stat.size;
             }
 
         } catch (_) {}
@@ -349,126 +279,80 @@ async function findDownloadedFile(baseName) {
     return best;
 }
 
-async function removeByBaseName(
-    baseName
-) {
-
+async function removeByBaseName(baseName) {
     try {
+        const files = await fsp.readdir(CACHE_DIR);
 
-        const files =
-            await fsp.readdir(
-                CACHE_DIR
-            );
-
-        for (
-            const file
-            of files
-        ) {
-
-            if (
-                !file.startsWith(
-                    baseName
-                )
-            ) {
+        for (const file of files) {
+            if (!file.startsWith(baseName)) {
                 continue;
             }
 
             try {
-
                 await fsp.unlink(
-                    path.join(
-                        CACHE_DIR,
-                        file
-                    )
+                    path.join(CACHE_DIR, file)
                 );
-
             } catch (_) {}
         }
 
     } catch (_) {}
 }
 
-/* ╭────────────────────────────────────╮
-   │ التفاعل بشكل آمن
-   ╰────────────────────────────────────╯ */
-
-async function safeReaction(
-    api,
-    reaction,
-    messageID
-) {
+async function safeDelete(file) {
+    if (!file) {
+        return;
+    }
 
     try {
+        await fsp.unlink(file);
+    } catch (_) {}
+}
 
+async function safeReaction(api, reaction, messageID) {
+    try {
         if (
             api &&
-            typeof api.setMessageReaction ===
-                "function" &&
+            typeof api.setMessageReaction === "function" &&
             messageID
         ) {
-
-            await new Promise(
-                resolve => {
-
-                    try {
-
-                        api.setMessageReaction(
-                            reaction,
-                            messageID,
-                            () => resolve(),
-                            true
-                        );
-
-                    } catch (_) {
-
-                        resolve();
-                    }
+            await new Promise(resolve => {
+                try {
+                    api.setMessageReaction(
+                        reaction,
+                        messageID,
+                        () => resolve(),
+                        true
+                    );
+                } catch (_) {
+                    resolve();
                 }
-            );
+            });
         }
 
     } catch (_) {}
 }
 
-/* ╭────────────────────────────────────╮
-   │ تعديل الرسالة بشكل آمن
-   ╰────────────────────────────────────╯ */
-
-async function safeEdit(
-    api,
-    messageID,
-    body
-) {
-
+async function safeEdit(api, messageID, body) {
     if (!messageID) {
         return false;
     }
 
     try {
-
         if (
             api &&
-            typeof api.editMessage ===
-                "function"
+            typeof api.editMessage === "function"
         ) {
-
-            await new Promise(
-                resolve => {
-
-                    try {
-
-                        api.editMessage(
-                            body,
-                            messageID,
-                            () => resolve()
-                        );
-
-                    } catch (_) {
-
-                        resolve();
-                    }
+            await new Promise(resolve => {
+                try {
+                    api.editMessage(
+                        body,
+                        messageID,
+                        () => resolve()
+                    );
+                } catch (_) {
+                    resolve();
                 }
-            );
+            });
 
             return true;
         }
@@ -478,65 +362,38 @@ async function safeEdit(
     return false;
 }
 
-/* ╭────────────────────────────────────╮
-   │ استخراج العنوان
-   ╰────────────────────────────────────╯ */
-
 async function getTitle(url) {
-
     try {
+        const result = await runYtDlp([
+            "--no-playlist",
+            "--no-warnings",
+            "--skip-download",
+            "--print",
+            "%(title)s",
+            url
+        ]);
 
-        const result =
-            await runYtDlp([
-                "--no-playlist",
-                "--no-warnings",
-                "--skip-download",
-                "--print",
-                "%(title)s",
-                url
-            ]);
-
-        return cleanTitle(
-            result.stdout
-        );
+        return cleanTitle(result.stdout);
 
     } catch (_) {
-
         return "";
     }
 }
 
-/* ╭────────────────────────────────────╮
-   │ تحديد الجودة
-   ╰────────────────────────────────────╯ */
-
 function parseQuality(args) {
-
     if (!args.length) {
-
         return {
             quality: "480p",
             height: 480
         };
     }
 
-    const first =
-        String(
-            args[0]
-        ).toLowerCase();
+    const first = String(args[0]).toLowerCase();
 
-    const match =
-        first.match(
-            /^(\d{3,4})p?$/
-        );
+    const match = first.match(/^(\d{3,4})p?$/);
 
     if (match) {
-
-        const height =
-            parseInt(
-                match[1],
-                10
-            );
+        const height = parseInt(match[1], 10);
 
         if (
             [
@@ -548,11 +405,8 @@ function parseQuality(args) {
                 1080
             ].includes(height)
         ) {
-
             return {
-                quality:
-                    `${height}p`,
-
+                quality: `${height}p`,
                 height
             };
         }
@@ -564,27 +418,16 @@ function parseQuality(args) {
     };
 }
 
-function extractModeAndUrl(
-    args
-) {
-
+function extractModeAndUrl(args) {
     if (!args.length) {
         return null;
     }
 
-    let mode =
-        "فيديو";
+    let mode = "فيديو";
+    let quality = null;
+    let url = "";
 
-    let quality =
-        null;
-
-    let url =
-        "";
-
-    const first =
-        String(
-            args[0]
-        ).toLowerCase();
+    const first = String(args[0]).toLowerCase();
 
     if (
         first === "صوت" ||
@@ -592,15 +435,11 @@ function extractModeAndUrl(
         first === "mp3" ||
         first === "اغنية"
     ) {
-
-        mode =
-            "صوت";
-
+        mode = "صوت";
         args.shift();
     }
 
-    const q =
-        parseQuality(args);
+    const q = parseQuality(args);
 
     if (
         args.length &&
@@ -608,52 +447,33 @@ function extractModeAndUrl(
             String(args[0])
         )
     ) {
-
-        quality =
-            q;
-
+        quality = q;
         args.shift();
     }
 
-    url =
-        cleanUrl(
-            args.join(" ")
-        );
+    url = cleanUrl(
+        args.join(" ")
+    );
 
     return {
         mode,
-
-        quality:
-            quality || {
-                quality: "480p",
-                height: 480
-            },
-
+        quality: quality || {
+            quality: "480p",
+            height: 480
+        },
         url
     };
 }
-
-/* ╭────────────────────────────────────╮
-   │ الأمر الرئيسي
-   ╰────────────────────────────────────╯ */
 
 module.exports.run = async function ({
     api,
     event,
     args
 }) {
+    const threadID = event.threadID;
+    const messageID = event.messageID;
 
-    const threadID =
-        event.threadID;
-
-    const messageID =
-        event.messageID;
-
-    if (
-        !args ||
-        !args.length
-    ) {
-
+    if (!args || !args.length) {
         return api.sendMessage(
             [
                 "╭─── ◸ طـريـقـة الاسـتـخـدام ◿ ───╮",
@@ -669,22 +489,14 @@ module.exports.run = async function ({
                 "│",
                 "╰──────────────────────────────╯"
             ].join("\n"),
-
             threadID,
             messageID
         );
     }
 
-    const parsed =
-        extractModeAndUrl(
-            [...args]
-        );
+    const parsed = extractModeAndUrl([...args]);
 
-    if (
-        !parsed ||
-        !parsed.url
-    ) {
-
+    if (!parsed || !parsed.url) {
         return api.sendMessage(
             errorMessage(
                 "أرسل رابطًا صالحًا بعد الأمر."
@@ -694,12 +506,7 @@ module.exports.run = async function ({
         );
     }
 
-    if (
-        !isUrl(
-            parsed.url
-        )
-    ) {
-
+    if (!isUrl(parsed.url)) {
         return api.sendMessage(
             errorMessage(
                 "الرابط غير صالح أو غير مدعوم."
@@ -709,22 +516,11 @@ module.exports.run = async function ({
         );
     }
 
-    const platform =
-        detectPlatform(
-            parsed.url
-        );
-
-    const mode =
-        parsed.mode;
-
-    const quality =
-        parsed.quality;
+    const platform = detectPlatform(parsed.url);
+    const mode = parsed.mode;
+    const quality = parsed.quality;
 
     await ensureCache();
-
-    /* ╭──────────────────────────────╮
-       │ تفاعل المنصة
-       ╰──────────────────────────────╯ */
 
     await safeReaction(
         api,
@@ -732,39 +528,21 @@ module.exports.run = async function ({
         messageID
     );
 
-    /*
-     * إرسال رسالة البداية
-     */
+    await new Promise(resolve => {
+        api.sendMessage(
+            startMessage(
+                platform,
+                mode,
+                quality.quality
+            ),
+            threadID,
+            () => resolve(),
+            messageID
+        );
+    });
 
-    await new Promise(
-        resolve => {
-
-            api.sendMessage(
-                startMessage(
-                    platform,
-                    mode,
-                    quality.quality
-                ),
-
-                threadID,
-
-                () => resolve(),
-
-                messageID
-            );
-        }
-    );
-
-    /*
-     * تحويل التفاعل إلى انتظار
-     */
-
-    await new Promise(
-        resolve =>
-            setTimeout(
-                resolve,
-                500
-            )
+    await new Promise(resolve =>
+        setTimeout(resolve, 500)
     );
 
     await safeReaction(
@@ -773,47 +551,28 @@ module.exports.run = async function ({
         messageID
     );
 
-    /*
-     * رسالة حالة التحميل
-     */
-
-    await new Promise(
-        resolve => {
-
-            api.sendMessage(
-                loadingMessage(
-                    platform,
-                    mode,
-                    quality.quality
-                ),
-
-                threadID,
-
-                () => resolve(),
-
-                messageID
-            );
-        }
-    );
+    await new Promise(resolve => {
+        api.sendMessage(
+            loadingMessage(
+                platform,
+                mode,
+                quality.quality
+            ),
+            threadID,
+            () => resolve(),
+            messageID
+        );
+    });
 
     const baseName =
         `download_${Date.now()}_${Math.random()
             .toString(36)
             .slice(2, 8)}`;
 
-    let outputFile =
-        null;
+    let outputFile = null;
 
     try {
-
-        /* ╭──────────────────────────────╮
-           │ الصوت
-           ╰──────────────────────────────╯ */
-
-        if (
-            mode === "صوت"
-        ) {
-
+        if (mode === "صوت") {
             const outputTemplate =
                 path.join(
                     CACHE_DIR,
@@ -824,43 +583,27 @@ module.exports.run = async function ({
                 "--no-playlist",
                 "--no-warnings",
                 "--no-update",
-
                 "--retries",
                 "10",
-
                 "--fragment-retries",
                 "10",
-
                 "--socket-timeout",
                 "30",
-
                 "--extractor-retries",
                 "3",
-
                 "--js-runtimes",
                 "deno",
-
                 "-x",
-
                 "--audio-format",
                 "mp3",
-
                 "--audio-quality",
                 "128K",
-
                 "-o",
                 outputTemplate,
-
                 parsed.url
             ]);
-        }
 
-        /* ╭──────────────────────────────╮
-           │ الفيديو
-           ╰──────────────────────────────╯ */
-
-        else {
-
+        } else {
             const outputTemplate =
                 path.join(
                     CACHE_DIR,
@@ -871,34 +614,24 @@ module.exports.run = async function ({
                 "--no-playlist",
                 "--no-warnings",
                 "--no-update",
-
                 "--retries",
                 "10",
-
                 "--fragment-retries",
                 "10",
-
                 "--file-access-retries",
                 "5",
-
                 "--extractor-retries",
                 "3",
-
                 "--socket-timeout",
                 "30",
-
                 "--js-runtimes",
                 "deno",
-
                 "-f",
                 `best[ext=mp4][height<=${quality.height}]/best[height<=${quality.height}]/best[ext=mp4]/best`,
-
                 "--merge-output-format",
                 "mp4",
-
                 "-o",
                 outputTemplate,
-
                 parsed.url
             ]);
         }
@@ -909,7 +642,6 @@ module.exports.run = async function ({
             );
 
         if (!outputFile) {
-
             throw new Error(
                 "لم يتم العثور على الملف بعد انتهاء التحميل."
             );
@@ -924,23 +656,13 @@ module.exports.run = async function ({
             !stat.isFile() ||
             stat.size <= 0
         ) {
-
             throw new Error(
                 "الملف الناتج غير صالح."
             );
         }
 
-        /* ╭──────────────────────────────╮
-           │ منع الملفات الكبيرة
-           ╰──────────────────────────────╯ */
-
-        if (
-            stat.size > MAX_SIZE
-        ) {
-
-            await safeDelete(
-                outputFile
-            );
+        if (stat.size > MAX_SIZE) {
+            await safeDelete(outputFile);
 
             await safeReaction(
                 api,
@@ -950,11 +672,8 @@ module.exports.run = async function ({
 
             return api.sendMessage(
                 errorMessage(
-                    `حجم الملف ${formatBytes(
-                        stat.size
-                    )} ويتجاوز الحد المسموح 25 MB.`
+                    `حجم الملف ${formatBytes(stat.size)} ويتجاوز الحد المسموح 25 MB.`
                 ),
-
                 threadID,
                 messageID
             );
@@ -962,14 +681,8 @@ module.exports.run = async function ({
 
         const title =
             mode === "فيديو"
-                ? await getTitle(
-                      parsed.url
-                  )
+                ? await getTitle(parsed.url)
                 : "";
-
-        /* ╭──────────────────────────────╮
-           │ نجاح التحميل
-           ╰──────────────────────────────╯ */
 
         await safeReaction(
             api,
@@ -982,33 +695,22 @@ module.exports.run = async function ({
                 platform,
                 mode,
                 quality.quality,
-                formatBytes(
-                    stat.size
-                ),
+                formatBytes(stat.size),
                 title
             );
 
-        /* ╭──────────────────────────────╮
-           │ إرسال الملف
-           ╰──────────────────────────────╯ */
-
         await new Promise(
             (resolve, reject) => {
-
                 api.sendMessage(
                     {
                         body: report,
-
                         attachment:
                             fs.createReadStream(
                                 outputFile
                             )
                     },
-
                     threadID,
-
                     err => {
-
                         if (err) {
                             reject(err);
                             return;
@@ -1016,18 +718,15 @@ module.exports.run = async function ({
 
                         resolve();
                     },
-
                     messageID
                 );
             }
         );
 
     } catch (error) {
-
         console.error(
             "[تحميل] Error:",
-            error &&
-            error.stack
+            error && error.stack
                 ? error.stack
                 : error
         );
@@ -1050,86 +749,51 @@ module.exports.run = async function ({
             ).toLowerCase();
 
         if (
-            errorText.includes(
-                "unsupported"
-            ) ||
-            errorText.includes(
-                "no suitable"
-            ) ||
-            errorText.includes(
-                "not supported"
-            )
+            errorText.includes("unsupported") ||
+            errorText.includes("no suitable") ||
+            errorText.includes("not supported")
         ) {
-
             reason =
                 "المنصة أو الرابط غير مدعوم حاليًا.";
 
         } else if (
-            errorText.includes(
-                "private"
-            ) ||
-            errorText.includes(
-                "login"
-            ) ||
-            errorText.includes(
-                "sign in"
-            )
+            errorText.includes("private") ||
+            errorText.includes("login") ||
+            errorText.includes("sign in")
         ) {
-
             reason =
                 "هذا المحتوى خاص أو يحتاج تسجيل دخول.";
 
         } else if (
-            errorText.includes(
-                "too large"
-            ) ||
-            errorText.includes(
-                "25 mb"
-            )
+            errorText.includes("too large") ||
+            errorText.includes("25 mb")
         ) {
-
             reason =
                 "الملف أكبر من الحد المسموح للإرسال.";
 
         } else if (
-            errorText.includes(
-                "403"
-            ) ||
-            errorText.includes(
-                "forbidden"
-            )
+            errorText.includes("403") ||
+            errorText.includes("forbidden")
         ) {
-
             reason =
                 "المنصة رفضت طلب التحميل. جرّب الرابط مرة أخرى.";
 
         } else if (
-            errorText.includes(
-                "timed out"
-            ) ||
-            errorText.includes(
-                "connection"
-            ) ||
-            errorText.includes(
-                "reset"
-            )
+            errorText.includes("timed out") ||
+            errorText.includes("connection") ||
+            errorText.includes("reset")
         ) {
-
             reason =
                 "الاتصال انقطع أثناء التحميل. أعد المحاولة.";
         }
 
         await api.sendMessage(
-            errorMessage(
-                reason
-            ),
-
+            errorMessage(reason),
             threadID,
             messageID
         );
 
     } finally {
-
         await removeByBaseName(
             baseName
         );
